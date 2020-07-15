@@ -50,7 +50,7 @@ func (cdb *inventoryDB) ByMac(mac net.HardwareAddr) (device.Device, error) {
 	}
 	var data macData
 	if err := cdb.macs.Get(mac.String(), &data); err != nil {
-		return device.Device{}, ErrorDatabaseNil
+		return device.Device{}, errors.New("Mac not found " + mac.String() + ": " + err.Error())
 	}
 	if data.DeviceID == "" {
 		return device.Device{}, errors.New("Missing Device ID")
