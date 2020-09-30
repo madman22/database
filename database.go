@@ -21,7 +21,7 @@ const NodeSeparator = `|`
 var ErrorDatabaseNil = errors.New("Database Nil!")
 var ErrorNotImplemented = errors.New("Not Implemented!")
 var ErrorNotClosable = errors.New("Node not closable")
-var ErrorInvalidKeyCharacter = errors.New("Cannot use " + NodeSeparator + " as part of a key.  That is used for disignating nodes aka buckets")
+var ErrorInvalidKeyCharacter = errors.New("Cannot use " + NodeSeparator + " as part of a key.  That is used for designating nodes")
 var ErrorMissingID = errors.New("ID cannot be empty")
 var ErrorNotFound = errors.New("Item not found in database")
 var ErrorNilValue = errors.New("Nil Interface Value")
@@ -37,7 +37,6 @@ type Database interface {
 
 type DatabaseIO interface {
 	Close() error
-	//Backup(string) error
 	Backup() ([]byte, error)
 }
 
@@ -45,53 +44,26 @@ type DatabaseReader interface {
 	Get(string, interface{}) error
 	GetValue(string) ([]byte, error)
 	GetAll() (List, error)
+	Length() int
 }
 
 type DatabaseWriter interface {
 	Set(string, interface{}) error
 	SetValue(string, []byte) error
 	Delete(string) error
+	GetAndDelete(string, interface{}) error
 	Merge(string, MergeFunc) error
 }
 
-//type MergeFunc func([]byte, []byte) error
 type MergeFunc func([]byte) ([]byte, error)
 
 type DatabaseNode interface {
+	NodeCount() int
 	GetNodes() ([]string, error)
 	NewNode(string) (Database, error)
 	DropNode(string) error
+	Parent() (Database, error)
 }
-
-/*
-type MergeF func(Decoder) (Encoder, error)
-
-type Encoder interface {
-	Interface() interface{}
-	Encode([]byte) error
-}
-
-type gobEncoder struct {
-	i interface{}
-	enc *gob.Encoder
-}
-
-func newEncoder(i interface{} Encoder) {
-	var ge gobEncoder
-	ge.i = i
-	return &ge
-}
-
-func (ge *gobEncoder) Encode(data []byte) error {
-	if gd.dec == nil {
-		return errors.New("Decoder not built!")
-	}
-	if len(gd.data) < 1 {
-		return errors.New("Empty data")
-	}
-	gob.NewEncoder(\)
-	return gd.dec.Decode(i)
-}*/
 
 type List map[string]Decoder
 
@@ -101,43 +73,38 @@ type Decoder interface {
 }
 
 type gobDecoder struct {
-	data []byte
+	data *bytes.Buffer
 	dec  *gob.Decoder
 }
 
 func newDecoder(data []byte) Decoder {
 	var gd gobDecoder
-	gd.data = make([]byte, len(data))
-	copy(gd.data, data)
-	gd.dec = gob.NewDecoder(bytes.NewBuffer(data))
+	gd.data = bytes.NewBuffer(data)
+	gd.dec = gob.NewDecoder(gd.data)
 	return &gd
 }
 
 func (gd *gobDecoder) Data() []byte {
-	return gd.data
+	return gd.data.Bytes()
 }
 
 func (gd *gobDecoder) Decode(i interface{}) error {
 	if gd.dec == nil {
 		return errors.New("Decoder not built!")
 	}
-	if len(gd.data) < 1 {
+	if gd.data == nil {
 		return errors.New("Empty data")
 	}
 	return gd.dec.Decode(i)
 }
 
 func (l List) Add(key string, content []byte) error {
-	//func (l List) AddContent(key string, content []byte) error {
 	if l == nil {
 		l = make(List)
 	}
 	if len(key) < 1 {
 		return ErrorKeysNil
 	}
-	//body := make([]byte, len(content))
-	//copy(body, content)
-	//l[key] = body
 	l[key] = newDecoder(content)
 	return nil
 }
@@ -208,6 +175,10 @@ func (bdb *BadgerDB) startGC(ctx context.Context, dur time.Duration) {
 	}
 }
 
+func (bdb *BadgerDB) Parent() (Database, error) {
+	return nil, ErrorDatabaseNil
+}
+
 func (bdb *BadgerDB) Get(id string, i interface{}) error {
 	if bdb.db == nil {
 		return ErrorDatabaseNil
@@ -220,7 +191,6 @@ func (bdb *BadgerDB) Get(id string, i interface{}) error {
 			copy(nb, val)
 			return nil
 		}
-		//if err := json.Unmarshal(val, i); err != nil {
 		dcr := gob.NewDecoder(bytes.NewReader(val))
 		if err := dcr.Decode(i); err != nil {
 			return err
@@ -242,63 +212,11 @@ func (bdb *BadgerDB) Get(id string, i interface{}) error {
 	return nil
 }
 
-/*func (bdb *BadgerDB) Get(id string, i interface{}) error {
+func (bdb *BadgerDB) GetAndDelete(id string, i interface{}) error {
 	if bdb.db == nil {
 		return ErrorDatabaseNil
 	}
-	if err := bdb.db.View(buildViewFuncIface(id, i)); err != nil {
-		return err
-	}
-	return nil
-}
-
-func buildViewFuncIface(id string, i interface{}) func(*badger.Txn) error {
-	return func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(id))
-		if err != nil {
-			return err
-		}
-		f := func(val []byte) error {
-			if nb, ok := i.([]byte); ok {
-				if cap(nb) < len(val) {
-					nb = make([]byte, len(val))
-				}
-				copy(nb, val)
-				return nil
-			}
-			//if err := json.Unmarshal(val, i); err != nil {
-			dcr := gob.NewDecoder(bytes.NewReader(val))
-			if err := dcr.Decode(i); err != nil {
-				return err
-			}
-			return nil
-		}
-		if err := item.Value(f); err != nil {
-			return err
-		}
-		return nil
-	}
-}*/
-
-//func buildUnMarshalValue(i interface{}) func([]byte) error {
-//	return
-//}
-
-/*func buildViewFuncIface(id string, i interface{}) func(*badger.Txn) error {
-	return func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(id))
-		if err != nil {
-			return err
-		}
-		if err := item.Value(buildUnMarshalValue(i)); err != nil {
-			return err
-		}
-		return nil
-	}
-}
-
-func buildUnMarshalValue(i interface{}) func([]byte) error {
-	return func(val []byte) error {
+	f := func(val []byte) error {
 		if nb, ok := i.([]byte); ok {
 			if cap(nb) < len(val) {
 				nb = make([]byte, len(val))
@@ -306,16 +224,30 @@ func buildUnMarshalValue(i interface{}) func([]byte) error {
 			copy(nb, val)
 			return nil
 		}
-		//if err := json.Unmarshal(val, i); err != nil {
 		dcr := gob.NewDecoder(bytes.NewReader(val))
 		if err := dcr.Decode(i); err != nil {
 			return err
 		}
 		return nil
 	}
-}*/
+	if err := bdb.db.Update(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(id))
+		if err != nil {
+			return err
+		}
+		if err := item.Value(f); err != nil {
+			return err
+		}
+		if err := txn.Delete([]byte(id)); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
 
-//func (bdb *BadgerDB) GetValue(id string, content []byte) error {
 func (bdb *BadgerDB) GetValue(id string) ([]byte, error) {
 	if bdb.db == nil {
 		return []byte{}, ErrorDatabaseNil
@@ -347,56 +279,16 @@ func (bdb *BadgerDB) GetValue(id string) ([]byte, error) {
 	return content, nil
 }
 
-/*func (bdb *BadgerDB) GetValue(id string, content []byte) error {
-	if bdb.db == nil {
-		return ErrorDatabaseNil
-	}
-	if err := bdb.db.View(buildViewFunc(id, content)); err != nil {
-		return err
-	}
-	return nil
-}
-
-func buildViewFunc(id string, content []byte) func(*badger.Txn) error {
-	return func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(id))
-		if err != nil {
-			return err
-		}
-		if err := item.Value(buildCopyValue(content)); err != nil {
-			return err
-		}
-		return nil
-	}
-}
-
-func buildCopyValue(content []byte) func([]byte) error {
-	return func(val []byte) error {
-		//if cap(content) < len(val) {
-		//	content = make([]byte, len(val))
-		//}
-		if cap(content) != len(val) {
-			content = make([]byte, len(val))
-		}
-		copy(content, val)
-		return nil
-	}
-}*/
-
 func (bdb *BadgerDB) Set(id string, i interface{}) error {
 	if bdb.db == nil {
 		return ErrorDatabaseNil
 	}
-	//if err := bdb.db.Update(buildUpdateFuncIface(id, i)); err != nil {
-	//	return err
-	//}
-
+	buf := &bytes.Buffer{}
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(i); err != nil {
+		return err
+	}
 	f := func(txn *badger.Txn) error {
-		buf := &bytes.Buffer{}
-		enc := gob.NewEncoder(buf)
-		if err := enc.Encode(i); err != nil {
-			return err
-		}
 		ent := badger.NewEntry([]byte(id), buf.Bytes())
 		return txn.SetEntry(ent)
 	}
@@ -404,30 +296,10 @@ func (bdb *BadgerDB) Set(id string, i interface{}) error {
 	return bdb.db.Update(f)
 }
 
-/*func buildUpdateFuncIface(id string, i interface{}) func(*badger.Txn) error {
-	return func(txn *badger.Txn) error {
-		buf := &bytes.Buffer{}
-		enc := gob.NewEncoder(buf)
-		if err := enc.Encode(i); err != nil {
-			return err
-		}
-		ent := badger.NewEntry([]byte(id), buf.Bytes())
-		return txn.SetEntry(ent)
-	}
-}*/
-
-/*func buildUpdateFunc(id string, content []byte) func(*badger.Txn) error {
-	return func(txn *badger.Txn) error {
-		ent := badger.NewEntry([]byte(id), content)
-		return txn.SetEntry(ent)
-	}
-}*/
-
 func (bdb *BadgerDB) SetValue(id string, content []byte) error {
 	if bdb.db == nil {
 		return ErrorDatabaseNil
 	}
-	//if err := bdb.db.Update(buildUpdateFunc(id, content)); err != nil {
 	err := bdb.db.Update(func(txn *badger.Txn) error {
 		ent := badger.NewEntry([]byte(id), content)
 		return txn.SetEntry(ent)
@@ -448,39 +320,7 @@ func (bdb *BadgerDB) Backup() ([]byte, error) {
 		return []byte{}, err
 	}
 	return buf.Bytes(), nil
-	/*f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC, 0666)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	l, err := bdb.db.Backup(f, 0)
-	if err != nil {
-		return err
-	}
-	if l < 1 {
-		return errors.New("Nothing saved to database!")
-	}
-	return nil*/
 }
-
-/*func (bdb *BadgerDB) BackupOld(filename string) error {
-	if bdb.db == nil {
-		return ErrorDatabaseNil
-	}
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC, 0666)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	l, err := bdb.db.Backup(f, 0)
-	if err != nil {
-		return err
-	}
-	if l < 1 {
-		return errors.New("Nothing saved to database!")
-	}
-	return nil
-}*/
 
 func (bdb *BadgerDB) Close() error {
 	if bdb.db == nil {
@@ -504,12 +344,6 @@ func (bdb *BadgerDB) Delete(id string) error {
 	}
 	return nil
 }
-
-/*func buildDeleteFunc(id string) func(*badger.Txn) error {
-	return func(txn *badger.Txn) error {
-		return txn.Delete([]byte(id))
-	}
-}*/
 
 func (bdb *BadgerDB) DropNode(id string) error {
 	if bdb.db == nil {
@@ -555,8 +389,6 @@ func (bdb *BadgerDB) GetNodes() ([]string, error) {
 	if bdb.db == nil {
 		return nil, ErrorDatabaseNil
 	}
-	//list := make(List)
-	//var list []string
 	list := make(map[string]struct{})
 
 	txn := bdb.db.NewTransaction(false)
@@ -603,19 +435,50 @@ func (bdb *BadgerDB) NewNode(id string) (Database, error) {
 	return &ndb, nil
 }
 
+func (bdb *BadgerNode) Parent() (Database, error) {
+	if bdb.db == nil {
+		return nil, ErrorDatabaseNil
+	}
+	nid := strings.TrimSuffix(bdb.prefix, NodeSeparator)
+	nid = strings.TrimSuffix(nid, bdb.id)
+	nid = strings.TrimSuffix(nid, NodeSeparator)
+	nid = strings.TrimSuffix(nid, NodeSeparator)
+	lindex := strings.LastIndex(nid, NodeSeparator)
+	if lindex < 0 {
+		var ndb BadgerNode
+		ndb.prefix = ""
+		ndb.db = bdb.db
+		ndb.id = ""
+		return &ndb, nil
+	} else if lindex == 0 {
+		var ndb BadgerNode
+		ndb.id = nid[1:]
+		ndb.prefix = NodeSeparator + ndb.id
+		ndb.db = bdb.db
+		return &ndb, nil
+	}
+	id := nid[lindex:]
+	if len(id) < 1 {
+		var ndb BadgerNode
+		ndb.prefix = ""
+		ndb.db = bdb.db
+		ndb.id = ""
+		return &ndb, nil
+	}
+	var ndb BadgerNode
+	ndb.prefix = nid + NodeSeparator
+	ndb.db = bdb.db
+	ndb.id = id
+	return &ndb, nil
+}
+
 //TODO backup only specific node prefix
+// maybe gob encoder with a map[string][]byte?
 func (ndb *BadgerNode) Backup() ([]byte, error) {
 	if ndb.db == nil {
 		return []byte{}, ErrorDatabaseNil
 	}
 	return ndb.Backup()
-}
-
-func (ndb *BadgerNode) BackupBad(filename string) error {
-	if ndb.db == nil {
-		return ErrorDatabaseNil
-	}
-	return ndb.BackupBad(filename)
 }
 
 func (ndb *BadgerNode) Close() error {
@@ -626,9 +489,6 @@ func (ndb *BadgerNode) Delete(id string) error {
 	if ndb.db == nil {
 		return ErrorDatabaseNil
 	}
-	//if err := ndb.db.Update(buildDeleteFunc(ndb.prefix + id)); err != nil {
-	//	return err
-	//}
 	f := func(txn *badger.Txn) error {
 		return txn.Delete([]byte(ndb.prefix + id))
 	}
@@ -652,19 +512,12 @@ func (ndb *BadgerNode) Set(id string, i interface{}) error {
 	if ndb.db == nil {
 		return ErrorDatabaseNil
 	}
-	/*b, err := json.Marshal(i)
-	if err != nil {
+	buf := &bytes.Buffer{}
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(i); err != nil {
 		return err
-	}*/
-	//if err := ndb.db.Update(buildUpdateFuncIface(ndb.prefix+id, i)); err != nil {
-	//	return err
-	//}
+	}
 	f := func(txn *badger.Txn) error {
-		buf := &bytes.Buffer{}
-		enc := gob.NewEncoder(buf)
-		if err := enc.Encode(i); err != nil {
-			return err
-		}
 		ent := badger.NewEntry([]byte(ndb.prefix+id), buf.Bytes())
 		return txn.SetEntry(ent)
 	}
@@ -675,9 +528,6 @@ func (ndb *BadgerNode) SetValue(id string, content []byte) error {
 	if ndb.db == nil {
 		return ErrorDatabaseNil
 	}
-	//if err := ndb.db.Update(buildUpdateFunc(ndb.prefix+id, content)); err != nil {
-	//	return err
-	//}
 	err := ndb.db.Update(func(txn *badger.Txn) error {
 		ent := badger.NewEntry([]byte(ndb.prefix+id), content)
 		return txn.SetEntry(ent)
@@ -701,7 +551,6 @@ func (ndb *BadgerNode) Get(id string, i interface{}) error {
 			copy(nb, val)
 			return nil
 		}
-		//if err := json.Unmarshal(val, i); err != nil {
 		dcr := gob.NewDecoder(bytes.NewReader(val))
 		if err := dcr.Decode(i); err != nil {
 			return err
@@ -723,19 +572,43 @@ func (ndb *BadgerNode) Get(id string, i interface{}) error {
 	return nil
 }
 
-/*func (ndb *BadgerNode) Get(id string, i interface{}) error {
+func (ndb *BadgerNode) GetAndDelete(id string, i interface{}) error {
 	if ndb.db == nil {
 		return ErrorDatabaseNil
 	}
-	prefix := ndb.prefix+id
-	if err := ndb.db.View(buildViewFuncIface(ndb.prefix+id, i)); err != nil {
+	pid := ndb.prefix + id
+	f := func(val []byte) error {
+		if nb, ok := i.([]byte); ok {
+			if cap(nb) < len(val) {
+				nb = make([]byte, len(val))
+			}
+			copy(nb, val)
+			return nil
+		}
+		dcr := gob.NewDecoder(bytes.NewReader(val))
+		if err := dcr.Decode(i); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := ndb.db.Update(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(pid))
+		if err != nil {
+			return err
+		}
+		if err := item.Value(f); err != nil {
+			return err
+		}
+		if err := txn.Delete([]byte(pid)); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return nil
 }
-*/
 
-//func (ndb *BadgerNode) GetValue(id string, content []byte) error {
 func (ndb *BadgerNode) GetValue(id string) ([]byte, error) {
 	if ndb.db == nil {
 		return []byte{}, ErrorDatabaseNil
@@ -847,8 +720,6 @@ func (db *BadgerDB) Merge(id string, f MergeFunc) error {
 	if len(id) < 1 {
 		return ErrorMissingID
 	}
-	//m := db.db.GetMergeOperator(id, f, 100*time.Millisecond)
-	//defer m.Stop()
 	txn := db.db.NewTransaction(true)
 	defer txn.Discard()
 	var content []byte
@@ -864,13 +735,10 @@ func (db *BadgerDB) Merge(id string, f MergeFunc) error {
 		return nil
 	}
 	if item, err := txn.Get([]byte(id)); err == nil {
-		//if err := item.Value(buildCopyValue(content)); err != nil {
 		if err := item.Value(ff); err != nil {
 			return err
 		}
 	}
-	//var newdata []byte
-	//if err := f(content, newdata); err != nil {
 	newdata, err := f(content)
 	if err != nil {
 		return err
@@ -884,7 +752,6 @@ func (db *BadgerDB) Merge(id string, f MergeFunc) error {
 	if err := txn.Commit(); err != nil {
 		return err
 	}
-	//m.Add()
 	return nil
 }
 
@@ -892,8 +759,6 @@ func (db *BadgerNode) Merge(id string, f MergeFunc) error {
 	if len(id) < 1 {
 		return ErrorMissingID
 	}
-	//m := db.db.GetMergeOperator(id, f, 100*time.Millisecond)
-	//defer m.Stop()
 	txn := db.db.NewTransaction(true)
 	defer txn.Discard()
 	var content []byte
@@ -913,10 +778,6 @@ func (db *BadgerNode) Merge(id string, f MergeFunc) error {
 			return err
 		}
 	}
-	/*var newdata []byte
-	if err := f(content, newdata); err != nil {
-		return err
-	}*/
 	newdata, err := f(content)
 	if err != nil {
 		return err
@@ -924,13 +785,116 @@ func (db *BadgerNode) Merge(id string, f MergeFunc) error {
 	if len(newdata) < 1 {
 		return nil
 	}
-	//fmt.Println("merging new bytes:" + string(newdata))
 	if err := txn.Set([]byte(db.prefix+id), newdata); err != nil {
 		return err
 	}
 	if err := txn.Commit(); err != nil {
 		return err
 	}
-	//m.Add()
 	return nil
+}
+
+func (bdb *BadgerDB) Length() int {
+	if bdb.db == nil {
+		return 0
+	}
+	var count int
+	txn := bdb.db.NewTransaction(false)
+	defer txn.Discard()
+
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	for it.Rewind(); it.Valid(); it.Next() {
+		item := it.Item()
+		key := string(item.Key())
+		if strings.HasPrefix(key, NodeSeparator) {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+func (ndb *BadgerNode) Length() int {
+	if ndb.db == nil {
+		return 0
+	}
+	var count int
+
+	txn := ndb.db.NewTransaction(false)
+	defer txn.Discard()
+
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	opts.Prefix = []byte(ndb.prefix)
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	for it.Rewind(); it.Valid(); it.Next() {
+		item := it.Item()
+		key := strings.TrimPrefix(string(item.Key()), ndb.prefix)
+		if strings.Contains(key, NodeSeparator) {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+func (bdb *BadgerDB) NodeCount() int {
+	if bdb.db == nil {
+		return 0
+	}
+	list := make(map[string]struct{})
+
+	txn := bdb.db.NewTransaction(false)
+	defer txn.Discard()
+
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	key := []byte(NodeSeparator)
+	for it.Seek(key); it.ValidForPrefix(key); it.Next() {
+		item := it.Item()
+		key := string(item.Key()[1:])
+		idex := strings.Index(key, NodeSeparator)
+		if idex < 1 {
+			continue
+		}
+		key = key[:idex]
+		list[key] = struct{}{}
+	}
+	return len(list)
+}
+
+func (ndb *BadgerNode) NodeCount() int {
+	if ndb.db == nil {
+		return 0
+	}
+	list := make(map[string]struct{})
+
+	txn := ndb.db.NewTransaction(false)
+	defer txn.Discard()
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	key := []byte(ndb.prefix + NodeSeparator)
+	for it.Seek(key); it.ValidForPrefix(key); it.Next() {
+		item := it.Item()
+		ik := strings.TrimPrefix(string(item.Key()), string(key))
+		idex := strings.Index(ik, NodeSeparator)
+		if idex < 1 {
+			continue
+		}
+		ik = ik[:idex]
+		list[ik] = struct{}{}
+	}
+	return len(list)
 }
