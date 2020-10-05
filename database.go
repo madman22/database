@@ -45,6 +45,8 @@ type DatabaseReader interface {
 	GetValue(string) ([]byte, error)
 	GetAll() (List, error)
 	Length() int
+	Range(int, int) (List, error)
+	Pages(int) int
 }
 
 type DatabaseWriter interface {
@@ -377,7 +379,9 @@ func (bdb *BadgerDB) GetAll() (List, error) {
 			continue
 		}
 		if err := item.Value(func(val []byte) error {
-			return list.Add(key, val)
+			b := make([]byte, len(val))
+			copy(b, val)
+			return list.Add(key, b)
 		}); err != nil {
 			errs = append(errs, errors.New("key:"+key+" "+err.Error()))
 		}
@@ -665,7 +669,9 @@ func (ndb *BadgerNode) GetAll() (List, error) {
 			continue
 		}
 		if err := item.Value(func(val []byte) error {
-			return list.Add(key, val)
+			b := make([]byte, len(val))
+			copy(b, val)
+			return list.Add(key, b)
 		}); err != nil {
 			errs = append(errs, errors.New("key:"+key+" "+err.Error()))
 		}
@@ -836,7 +842,7 @@ func (ndb *BadgerNode) Length() int {
 	for it.Rewind(); it.Valid(); it.Next() {
 		item := it.Item()
 		key := strings.TrimPrefix(string(item.Key()), ndb.prefix)
-		if strings.Contains(key, NodeSeparator) {
+		if strings.HasPrefix(key, NodeSeparator) {
 			continue
 		}
 		count++
@@ -897,4 +903,121 @@ func (ndb *BadgerNode) NodeCount() int {
 		list[ik] = struct{}{}
 	}
 	return len(list)
+}
+
+func (dbd *BadgerDB) Range(page, count int) (List, error) {
+	if dbd.db == nil {
+		return nil, ErrorDatabaseNil
+	}
+	if page < 1 {
+		page = 1
+	}
+	list := make(List)
+	txn := dbd.db.NewTransaction(false)
+	defer txn.Discard()
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	var visited int
+	var currentPage int = 1
+	var errs []string
+	for it.Rewind(); it.Valid(); it.Next() {
+		item := it.Item()
+		key := string(item.Key())
+		if strings.HasPrefix(key, NodeSeparator) {
+			continue
+		}
+		visited++
+		if currentPage == page {
+			if err := item.Value(func(val []byte) error {
+				b := make([]byte, len(val))
+				copy(b, val)
+				return list.Add(key, b)
+			}); err != nil {
+				errs = append(errs, key+" "+err.Error())
+			}
+		} else if currentPage > page {
+			break
+		}
+		if visited == count {
+			currentPage++
+			visited = 0
+		}
+	}
+	if len(errs) > 0 {
+		return list, errors.New(strings.Join(errs, " "))
+	}
+	return list, nil
+}
+
+func (dbd *BadgerNode) Range(page, count int) (List, error) {
+	if dbd.db == nil {
+		return nil, ErrorDatabaseNil
+	}
+	if page < 1 {
+		page = 1
+	}
+	list := make(List)
+	txn := dbd.db.NewTransaction(false)
+	defer txn.Discard()
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	opts.Prefix = []byte(dbd.prefix)
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	var visited int
+	var currentPage int = 1
+	var errs []string
+	for it.Rewind(); it.Valid(); it.Next() {
+		item := it.Item()
+		key := strings.TrimPrefix(string(item.Key()), dbd.prefix)
+		if strings.HasPrefix(key, NodeSeparator) {
+			continue
+		}
+		visited++
+		if currentPage == page {
+			if err := item.Value(func(val []byte) error {
+				b := make([]byte, len(val))
+				copy(b, val)
+				return list.Add(key, b)
+			}); err != nil {
+				errs = append(errs, key+" "+err.Error())
+			}
+		} else if currentPage > page {
+			break
+		}
+		if visited == count {
+			currentPage++
+			visited = 0
+		}
+	}
+	if len(errs) > 0 {
+		return list, errors.New(strings.Join(errs, " "))
+	}
+	return list, nil
+}
+
+func (dbd *BadgerDB) Pages(count int) int {
+	l := dbd.Length()
+	if count > l {
+		return 1
+	}
+	pages := l / count
+	if l%count > 0 {
+		pages++
+	}
+	return pages
+}
+
+func (dbd *BadgerNode) Pages(count int) int {
+	l := dbd.Length()
+	if count > l {
+		return 1
+	}
+	pages := l / count
+	if l%count > 0 {
+		pages++
+	}
+	return pages
 }
