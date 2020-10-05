@@ -912,6 +912,9 @@ func (dbd *BadgerDB) Range(page, count int) (List, error) {
 	if page < 1 {
 		page = 1
 	}
+	if count < 1 {
+		count = 1
+	}
 	list := make(List)
 	txn := dbd.db.NewTransaction(false)
 	defer txn.Discard()
@@ -957,6 +960,9 @@ func (dbd *BadgerNode) Range(page, count int) (List, error) {
 	}
 	if page < 1 {
 		page = 1
+	}
+	if count < 1 {
+		count = 1
 	}
 	list := make(List)
 	txn := dbd.db.NewTransaction(false)
