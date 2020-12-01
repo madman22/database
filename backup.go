@@ -118,7 +118,7 @@ func restoreDB(db *BadgerDB, r *zip.Reader) error {
 	}
 
 	txn := db.db.NewTransaction(true)
-	defer txn.Commit()
+	//defer txn.Commit()
 
 	var errs []error
 	for _, f := range r.File {
@@ -143,10 +143,20 @@ func restoreDB(db *BadgerDB, r *zip.Reader) error {
 			continue
 		}
 		if err := txn.Set([]byte(id), data.Bytes()); err != nil {
-			errs = append(errs, errors.New(err.Error()+":"+f.Name))
-			continue
+			if err == badger.ErrTxnTooBig {
+				txn.Commit()
+				txn = db.db.NewTransaction(true)
+				if err := txn.Set([]byte(id), data.Bytes()); err != nil {
+					errs = append(errs, errors.New(err.Error()+":"+f.Name))
+					continue
+				}
+			} else {
+				errs = append(errs, errors.New(err.Error()+":"+f.Name))
+				continue
+			}
 		}
 	}
+	txn.Commit()
 	if len(errs) > 0 {
 		var body string
 		for _, err := range errs {
@@ -233,7 +243,7 @@ func restoreNode(db *BadgerNode, r *zip.Reader) error {
 	}
 
 	txn := db.db.NewTransaction(true)
-	defer txn.Commit()
+	//defer txn.Commit()
 
 	var errs []error
 	for _, f := range r.File {
@@ -258,10 +268,20 @@ func restoreNode(db *BadgerNode, r *zip.Reader) error {
 			continue
 		}
 		if err := txn.Set([]byte(id), data.Bytes()); err != nil {
-			errs = append(errs, errors.New(err.Error()+":"+f.Name))
-			continue
+			if err == badger.ErrTxnTooBig {
+				txn.Commit()
+				txn = db.db.NewTransaction(true)
+				if err := txn.Set([]byte(id), data.Bytes()); err != nil {
+					errs = append(errs, errors.New(err.Error()+":"+f.Name))
+					continue
+				}
+			} else {
+				errs = append(errs, errors.New(err.Error()+":"+f.Name))
+				continue
+			}
 		}
 	}
+	txn.Commit()
 	if len(errs) > 0 {
 		var body string
 		for _, err := range errs {
@@ -348,7 +368,7 @@ func restoreExpiry(db *BadgerExpiry, r *zip.Reader) error {
 	}
 
 	txn := db.db.NewTransaction(true)
-	defer txn.Commit()
+	//defer txn.Commit()
 
 	var errs []error
 	for _, f := range r.File {
@@ -373,10 +393,20 @@ func restoreExpiry(db *BadgerExpiry, r *zip.Reader) error {
 			continue
 		}
 		if err := txn.Set([]byte(id), data.Bytes()); err != nil {
-			errs = append(errs, errors.New(err.Error()+":"+f.Name))
-			continue
+			if err == badger.ErrTxnTooBig {
+				txn.Commit()
+				txn = db.db.NewTransaction(true)
+				if err := txn.Set([]byte(id), data.Bytes()); err != nil {
+					errs = append(errs, errors.New(err.Error()+":"+f.Name))
+					continue
+				}
+			} else {
+				errs = append(errs, errors.New(err.Error()+":"+f.Name))
+				continue
+			}
 		}
 	}
+	txn.Commit()
 	if len(errs) > 0 {
 		var body string
 		for _, err := range errs {
