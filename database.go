@@ -33,11 +33,13 @@ type Database interface {
 	DatabaseWriter
 	DatabaseNode
 	DatabaseIO
+	DatabaseExpiry
 }
 
 type DatabaseIO interface {
+	DatabaseBackups
 	Close() error
-	Backup() ([]byte, error)
+	//Backup() ([]byte, error)
 }
 
 type DatabaseReader interface {
@@ -45,7 +47,7 @@ type DatabaseReader interface {
 	GetValue(string) ([]byte, error)
 	GetAll() (List, error)
 	Length() int
-	Range(int, int) (List, error)
+	Range(page, count int) (List, error)
 	Pages(int) int
 }
 
@@ -65,6 +67,10 @@ type DatabaseNode interface {
 	NewNode(string) (Database, error)
 	DropNode(string) error
 	Parent() (Database, error)
+}
+
+type DatabaseExpiry interface {
+	NewExpiryNode(string, time.Duration) (Database, error)
 }
 
 type List map[string]Decoder
@@ -312,7 +318,7 @@ func (bdb *BadgerDB) SetValue(id string, content []byte) error {
 	return nil
 }
 
-func (bdb *BadgerDB) Backup() ([]byte, error) {
+func (bdb *BadgerDB) BackupOld() ([]byte, error) {
 	if bdb.db == nil {
 		return []byte{}, ErrorDatabaseNil
 	}
@@ -478,12 +484,12 @@ func (bdb *BadgerNode) Parent() (Database, error) {
 
 //TODO backup only specific node prefix
 // maybe gob encoder with a map[string][]byte?
-func (ndb *BadgerNode) Backup() ([]byte, error) {
+/*func (ndb *BadgerNode) BackupOld() ([]byte, error) {
 	if ndb.db == nil {
 		return []byte{}, ErrorDatabaseNil
 	}
-	return ndb.Backup()
-}
+	return ndb.BackupOld()
+}*/
 
 func (ndb *BadgerNode) Close() error {
 	return ErrorNotClosable
@@ -1026,4 +1032,12 @@ func (dbd *BadgerNode) Pages(count int) int {
 		pages++
 	}
 	return pages
+}
+
+func (dbd *BadgerNode) NewExpiryNode(id string, dur time.Duration) (Database, error) {
+	return NewExpiryNode(dbd.db, dbd.prefix, id, dur)
+}
+
+func (dbd *BadgerDB) NewExpiryNode(id string, dur time.Duration) (Database, error) {
+	return NewExpiryNode(dbd.db, "", id, dur)
 }
