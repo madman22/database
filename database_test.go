@@ -21,6 +21,9 @@ func TestBadgerDatabase(t *testing.T) {
 		t.Error(err.Error())
 		return
 	}
+	if err := Upgrade(db, LatestVersion); err != nil {
+		t.Error(err.Error())
+	}
 	var ts string
 	if err := db.Get("Test2", &ts); err != nil {
 		t.Log(err.Error())
@@ -55,6 +58,7 @@ func TestBadgerDatabase(t *testing.T) {
 	if err := db.Set("Test2", "Value3"); err != nil {
 		t.Log(err.Error())
 	}
+	t.Log("Database Version", db.Version().String())
 
 	if err := db.Close(); err != nil {
 		t.Log(err.Error())
@@ -102,7 +106,7 @@ func TestBadgerSetValue(t *testing.T) {
 		t.Error("TEST2 output does not equal input", string(content2))
 		return
 	}
-
+	t.Log("Database Version", ndb.Version().String())
 	if err := ddb.Close(); err != nil {
 		t.Log(err.Error())
 	}
@@ -153,7 +157,7 @@ func TestBadgerDatabaseNode(t *testing.T) {
 	if err := db.Set("Test2", "Value3"); err != nil {
 		t.Log(err.Error())
 	}
-
+	t.Log("Database Version", db.Version().String())
 	//node, err := db.NewNode("SecondNode")
 	//testSetDB(t, node, 100)
 
@@ -247,7 +251,11 @@ func TestDatabaseDeep(t *testing.T) {
 			}
 		}
 	}
-
+	if err := Upgrade(db, LatestVersion); err != nil {
+		t.Error(err.Error())
+	} else {
+		t.Log("Upgraded to:" + LatestVersion.String())
+	}
 	nodes, err := db.GetNodes()
 	if err != nil {
 		t.Log(err.Error())
@@ -333,5 +341,5 @@ func TestDatabaseDeep(t *testing.T) {
 	} else {
 		t.Log("Got Device!", dev.ID, dev.IP.String(), dev.Description, dev.Macs)
 	}
-
+	t.Log("Database Version", db.Version().String())
 }

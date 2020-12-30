@@ -10,7 +10,15 @@ import (
 )
 
 func TestRange(t *testing.T) {
-	db, err := NewInMemoryBadger(context.Background(), 5*time.Minute)
+	dbd, err := NewInMemoryBadger(context.Background(), 5*time.Minute)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	if err := Upgrade(dbd, LatestVersion); err != nil {
+		t.Error(err.Error())
+	}
+	db, err := dbd.NewNode("Node")
 	if err != nil {
 		t.Error(err.Error())
 		return
