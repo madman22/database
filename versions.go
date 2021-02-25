@@ -10,7 +10,7 @@ import (
 
 	//"time"
 
-	badger "github.com/dgraph-io/badger"
+	badger "github.com/dgraph-io/badger/v2"
 	"github.com/spf13/afero"
 )
 
@@ -216,12 +216,15 @@ func (dbd *BadgerDB) saveVersion() error {
 	return &vers
 }*/
 
-func getBadger(db *badger.DB, dbv Version, prefix, id string, i interface{}) error {
+func getBadger(db *badger.DB, dbv Version, prefix, oid string, i interface{}) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
+	var id string
 	if dbv >= Version2 {
-		id = EntityPrefix + id
+		id = EntityPrefix + oid
+	} else {
+		id = oid
 	}
 	f := func(val []byte) error {
 		if nb, ok := i.([]byte); ok {
@@ -247,7 +250,7 @@ func getBadger(db *badger.DB, dbv Version, prefix, id string, i interface{}) err
 		}
 		return nil
 	}); err != nil {
-		return err
+		return errors.New(err.Error() + " " + oid)
 	}
 	return nil
 }

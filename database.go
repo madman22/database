@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	badger "github.com/dgraph-io/badger"
+	badger "github.com/dgraph-io/badger/v2"
 )
 
 const NodeSeparator = `|`
@@ -156,6 +156,11 @@ func NewInMemoryBadger(ctx context.Context, dur time.Duration) (*BadgerDB, error
 	go bdb.startGC(bdb.ctx, dur)
 
 	v := getVersion(db)
+	if v == Version1 {
+		if lsm, vl := db.Size(); lsm == 0 && vl == 0 {
+			v = LatestVersion
+		}
+	}
 	bdb.version = &DatabaseVersioner{ver: v}
 	if err := bdb.saveVersion(); err != nil {
 		return &bdb, err
@@ -179,8 +184,12 @@ func NewBadger(name string, ctx context.Context, dur time.Duration) (*BadgerDB, 
 	go bdb.startGC(bdb.ctx, dur)
 
 	v := getVersion(db)
+	if v == Version1 {
+		if lsm, vl := db.Size(); lsm == 0 && vl == 0 {
+			v = LatestVersion
+		}
+	}
 	bdb.version = &DatabaseVersioner{ver: v}
-
 	if err := bdb.saveVersion(); err != nil {
 		return &bdb, err
 	}

@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dgraph-io/badger"
+	"github.com/dgraph-io/badger/v2"
 
 	//"bytes"
 	//"crypto/sha256"
@@ -122,7 +122,7 @@ func restoreDB(db *BadgerDB, r *zip.Reader) error {
 
 	txn := db.db.NewTransaction(true)
 	//defer txn.Discard()
-	
+
 	nv := db.Version()
 
 	//defer txn.Commit()
