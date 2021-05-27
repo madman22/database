@@ -7,7 +7,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v3"
+	//"github.com/dgraph-io/badger"
 
 	//"bytes"
 	//"crypto/sha256"
@@ -15,7 +16,7 @@ import (
 	"errors"
 	//"io"
 	//"strings"
-	"time"
+	//"time"
 
 	"github.com/twinj/uuid"
 )
@@ -25,13 +26,13 @@ type DatabaseBackups interface {
 	Restore(*zip.Reader) error
 }
 
-type backupInfo struct {
+type BackupInfo struct {
 	//Nodes        []string
 	FilenameToId map[string]string
 	Version      Version
 }
 
-type backupNodeInfo struct {
+/*type backupNodeInfo struct {
 	NodeName     string
 	Prefix       string
 	Nodes        []string
@@ -44,7 +45,7 @@ type backupExpiryInfo struct {
 	Duration     time.Duration
 	Nodes        []string
 	FilenameToId map[string]string
-}
+}*/
 
 func backupDB(db *BadgerDB, w *zip.Writer) error {
 	if db == nil {
@@ -60,7 +61,7 @@ func backupDB(db *BadgerDB, w *zip.Writer) error {
 	defer it.Close()
 	var errs []error
 
-	var bi backupInfo
+	var bi BackupInfo
 	bi.Version = db.Version()
 	bi.FilenameToId = make(map[string]string)
 
@@ -82,6 +83,7 @@ func backupDB(db *BadgerDB, w *zip.Writer) error {
 			errs = append(errs, errors.New("key:"+key+" "+err.Error()))
 		}
 		bi.FilenameToId[filename] = key
+		w.Flush()
 	}
 
 	if f, err := w.Create("backupInfo"); err != nil {
@@ -92,7 +94,7 @@ func backupDB(db *BadgerDB, w *zip.Writer) error {
 			return err
 		}
 	}
-
+	w.Flush()
 	return nil
 }
 
@@ -100,7 +102,7 @@ func restoreDB(db *BadgerDB, r *zip.Reader) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
-	var bi backupInfo
+	var bi BackupInfo
 	for _, file := range r.File {
 		if file.Name == "backupInfo" {
 			rdr, err := file.Open()
@@ -200,7 +202,7 @@ func backupNode(db *BadgerNode, w *zip.Writer) error {
 	defer it.Close()
 	var errs []error
 
-	var bi backupInfo
+	var bi BackupInfo
 	bi.Version = db.Version()
 	bi.FilenameToId = make(map[string]string)
 
@@ -238,7 +240,7 @@ func restoreNode(db *BadgerNode, r *zip.Reader) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
-	var bi backupInfo
+	var bi BackupInfo
 	for _, file := range r.File {
 		if file.Name == "backupInfo" {
 			rdr, err := file.Open()
@@ -326,7 +328,7 @@ func backupExpiry(db *BadgerExpiry, w *zip.Writer) error {
 	defer it.Close()
 	var errs []error
 
-	var bi backupInfo
+	var bi BackupInfo
 	bi.FilenameToId = make(map[string]string)
 
 	for it.Rewind(); it.Valid(); it.Next() {
@@ -363,7 +365,7 @@ func restoreExpiry(db *BadgerExpiry, r *zip.Reader) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
-	var bi backupInfo
+	var bi BackupInfo
 	for _, file := range r.File {
 		if file.Name == "backupInfo" {
 			rdr, err := file.Open()
@@ -437,25 +439,55 @@ func restoreExpiry(db *BadgerExpiry, r *zip.Reader) error {
 }
 
 func (db *BadgerDB) Backup(w *zip.Writer) error {
+	if db.readonly != nil {
+		if db.readonly.IsSet() {
+			return nil
+		}
+	}
 	return backupDB(db, w)
 }
 
 func (db *BadgerDB) Restore(r *zip.Reader) error {
+	if db.readonly != nil {
+		if db.readonly.IsSet() {
+			return nil
+		}
+	}
 	return restoreDB(db, r)
 }
 
 func (db *BadgerNode) Backup(w *zip.Writer) error {
+	if db.readonly != nil {
+		if db.readonly.IsSet() {
+			return nil
+		}
+	}
 	return backupNode(db, w)
 }
 
 func (db *BadgerNode) Restore(r *zip.Reader) error {
+	if db.readonly != nil {
+		if db.readonly.IsSet() {
+			return nil
+		}
+	}
 	return restoreNode(db, r)
 }
 
 func (db *BadgerExpiry) Backup(w *zip.Writer) error {
+	if db.readonly != nil {
+		if db.readonly.IsSet() {
+			return nil
+		}
+	}
 	return backupExpiry(db, w)
 }
 
 func (db *BadgerExpiry) Restore(r *zip.Reader) error {
+	if db.readonly != nil {
+		if db.readonly.IsSet() {
+			return nil
+		}
+	}
 	return restoreExpiry(db, r)
 }

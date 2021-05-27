@@ -10,7 +10,7 @@ import (
 
 	//"time"
 
-	badger "github.com/dgraph-io/badger/v2"
+	badger "github.com/dgraph-io/badger/v3"
 	"github.com/spf13/afero"
 )
 
@@ -183,39 +183,6 @@ func (dbd *BadgerDB) saveVersion() error {
 	return dbd.db.Update(f)
 }
 
-/*func getVersion(db *badger.DB) *DatabaseVersioner {
-	if db == nil {
-		var vers DatabaseVersioner
-		vers.ver = Version2
-		return &vers
-	}
-	var dbv Version
-	f := func(val []byte) error {
-		dcr := gob.NewDecoder(bytes.NewReader(val))
-		if err := dcr.Decode(&dbv); err != nil {
-			return err
-		}
-		return nil
-	}
-	if err := db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(SettingsPrefix + "DatabaseVersion"))
-		if err != nil {
-			return err
-		}
-		if err := item.Value(f); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		var vers DatabaseVersioner
-		vers.ver = Version1
-		return &vers
-	}
-	var vers DatabaseVersioner
-	vers.ver = dbv
-	return &vers
-}*/
-
 func getBadger(db *badger.DB, dbv Version, prefix, oid string, i interface{}) error {
 	if db == nil {
 		return ErrorDatabaseNil
@@ -226,20 +193,7 @@ func getBadger(db *badger.DB, dbv Version, prefix, oid string, i interface{}) er
 	} else {
 		id = oid
 	}
-	f := func(val []byte) error {
-		if nb, ok := i.([]byte); ok {
-			if cap(nb) < len(val) {
-				nb = make([]byte, len(val))
-			}
-			copy(nb, val)
-			return nil
-		}
-		dcr := gob.NewDecoder(bytes.NewReader(val))
-		if err := dcr.Decode(i); err != nil {
-			return err
-		}
-		return nil
-	}
+	f := buildGetBadger(i)
 	if err := db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(prefix + id))
 		if err != nil {
@@ -262,7 +216,7 @@ func getAndDeleteBadger(db *badger.DB, dbv Version, prefix, id string, i interfa
 	if dbv >= Version2 {
 		id = EntityPrefix + id
 	}
-	f := func(val []byte) error {
+	/*f := func(val []byte) error {
 		if nb, ok := i.([]byte); ok {
 			if cap(nb) < len(val) {
 				nb = make([]byte, len(val))
@@ -275,7 +229,8 @@ func getAndDeleteBadger(db *badger.DB, dbv Version, prefix, id string, i interfa
 			return err
 		}
 		return nil
-	}
+	}*/
+	f := buildGetBadger(i)
 	if err := db.Update(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(prefix + id))
 		if err != nil {
@@ -338,13 +293,14 @@ func setBadger(db *badger.DB, dbv Version, prefix, id string, i interface{}) err
 	if dbv >= Version2 {
 		id = EntityPrefix + id
 	}
-	buf := &bytes.Buffer{}
-	enc := gob.NewEncoder(buf)
+	//buf := &bytes.Buffer{}
+	//enc := gob.NewEncoder(buf)
+	enc := newGobEncoder()
 	if err := enc.Encode(i); err != nil {
 		return err
 	}
 	f := func(txn *badger.Txn) error {
-		ent := badger.NewEntry([]byte(prefix+id), buf.Bytes())
+		ent := badger.NewEntry([]byte(prefix+id), enc.Data())
 		return txn.SetEntry(ent)
 	}
 	return db.Update(f)
@@ -396,6 +352,16 @@ func getAllBadger(db *badger.DB, dbv Version, prefix string) (List, error) {
 	return getAllBadgerV2(db, prefix)
 }
 
+func getAllIDsBadger(db *badger.DB, dbv Version, prefix string) ([]string, error) {
+	if db == nil {
+		return nil, ErrorDatabaseNil
+	}
+	if dbv < Version2 {
+		return getAllIDsBadgerV1(db, prefix)
+	}
+	return getAllIDsBadgerV2(db, prefix)
+}
+
 func getAllBadgerV1(db *badger.DB, prefix string) (List, error) {
 	list := make(List)
 	txn := db.NewTransaction(false)
@@ -429,7 +395,42 @@ func getAllBadgerV1(db *badger.DB, prefix string) (List, error) {
 			errs = append(errs, errors.New("key:"+key+" "+err.Error()))
 		}
 	}
+	if len(errs) < 0 {
+		var body string
+		for _, err := range errs {
+			if len(body) > 0 {
+				body += " "
+			}
+			body += err.Error()
+		}
+		return list, errors.New(body)
+	}
 	return list, nil
+}
+
+func getAllIDsBadgerV1(db *badger.DB, prefix string) ([]string, error) {
+	txn := db.NewTransaction(false)
+	defer txn.Discard()
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	//var errs []error
+	var idList []string
+	for it.Rewind(); it.Valid(); it.Next() {
+		item := it.Item()
+		var key string
+		if len(prefix) > 0 {
+			key = strings.TrimPrefix(string(item.Key()), prefix)
+		} else {
+			key = string(item.Key())
+		}
+		if strings.Contains(key, NodeSeparator) {
+			continue
+		}
+		idList = append(idList, key)
+	}
+	return idList, nil
 }
 
 func getAllBadgerV2(db *badger.DB, prefix string) (List, error) {
@@ -454,9 +455,6 @@ func getAllBadgerV2(db *badger.DB, prefix string) (List, error) {
 		} else {
 			key = strings.TrimPrefix(string(item.Key()), EntityPrefix)
 		}
-		if strings.Contains(key, NodeSeparator) {
-			continue
-		}
 		if err := item.Value(func(val []byte) error {
 			b := make([]byte, len(val))
 			copy(b, val)
@@ -465,7 +463,54 @@ func getAllBadgerV2(db *badger.DB, prefix string) (List, error) {
 			errs = append(errs, errors.New("key:"+key+" "+err.Error()))
 		}
 	}
+	if len(errs) < 0 {
+		var body string
+		for _, err := range errs {
+			if len(body) > 0 {
+				body += " "
+			}
+			body += err.Error()
+		}
+		return list, errors.New(body)
+	}
 	return list, nil
+}
+
+func getAllIDsBadgerV2(db *badger.DB, prefix string) ([]string, error) {
+	txn := db.NewTransaction(false)
+	defer txn.Discard()
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = true
+	if len(prefix) > 0 {
+		opts.Prefix = []byte(prefix + EntityPrefix)
+	} else {
+		opts.Prefix = []byte(EntityPrefix)
+	}
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	//var errs []error
+	var idList []string
+	for it.Rewind(); it.Valid(); it.Next() {
+		item := it.Item()
+		var key string
+		if len(prefix) > 0 {
+			key = strings.TrimPrefix(string(item.Key()), prefix+EntityPrefix)
+		} else {
+			key = strings.TrimPrefix(string(item.Key()), EntityPrefix)
+		}
+		idList = append(idList, key)
+	}
+	/*if len(errs) < 0 {
+		var body string
+		for _, err := range errs {
+			if len(body) > 0 {
+				body += " "
+			}
+			body += err.Error()
+		}
+		return []string{}, errors.New(body)
+	}*/
+	return idList, nil
 }
 
 func mergeBadger(db *badger.DB, dbv Version, prefix, id string, f MergeFunc) error {
@@ -650,17 +695,6 @@ func rangeBadger(db *badger.DB, dbv Version, prefix string, page, count int) (Li
 	return list, nil
 }
 
-/*func getNodesBadger(db *badger.DB, dbv Version, prefix string) ([]string, error) {
-	if db == nil {
-		return []string{}, ErrorDatabaseNil
-	}
-	if dbv >= Version2 {
-		return getNodesBadgerV2(db, prefix)
-	} else {
-		return getNodesBadgerV1(db, prefix)
-	}
-}*/
-
 func getNodesBadger(db *badger.DB, dbv Version, prefix string) ([]string, error) {
 	if db == nil {
 		return []string{}, ErrorDatabaseNil
@@ -749,33 +783,3 @@ func nodeCountBadger(db *badger.DB, dbv Version, prefix string) int {
 	}
 	return len(list)
 }
-
-/*
-func loadSettingsBadger(db *badger.DB, dbv Version, prefix string) error {
-	if db == nil {
-		return ErrorDatabaseNil
-	}
-	var timeout time.Duration
-
-
-	f := func(val []byte) error {
-		dcr := gob.NewDecoder(bytes.NewReader(val))
-		if err := dcr.Decode(&timeout); err != nil {
-			return err
-		}
-		return nil
-	}
-	if err := db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(SettingsPrefix + "Version"))
-		if err != nil {
-			return err
-		}
-		if err := item.Value(f); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		return Version1
-	}
-
-}*/

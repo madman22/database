@@ -15,6 +15,37 @@ import (
 	"github.com/twinj/uuid"
 )
 
+func TestReadOnly(t *testing.T) {
+	db, err := NewInMemoryBadger(context.Background(), 2*time.Second)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	defer db.Close()
+	db.SetReadOnly()
+	test := "this is a test"
+	if err := db.Set("Test", &test); err != nil {
+		t.Error(err.Error())
+		return
+	}
+	var another string
+	if err := db.Get("Test", &another); err == nil {
+		t.Error("Test was written to database")
+		return
+	}
+	db.SetReadWrite()
+	if err := db.Set("Test", &test); err != nil {
+		t.Error(err.Error())
+		return
+	}
+	if err := db.Get("Test", &another); err != nil {
+		t.Error(err.Error())
+	}
+	if another != test {
+		t.Error("another does not equal test")
+	}
+}
+
 func TestBadgerDatabase(t *testing.T) {
 	db, err := NewInMemoryBadger(context.Background(), 2*time.Second)
 	if err != nil {

@@ -1,14 +1,17 @@
 package database
 
 import (
-	"bytes"
+	//"bytes"
 	"context"
-	"encoding/gob"
+	//"encoding/gob"
 	"errors"
 	"strings"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v2"
+	"github.com/tevino/abool"
+
+	//badgerv1 "github.com/dgraph-io/badger"
+	badger "github.com/dgraph-io/badger/v3"
 )
 
 const NodeSeparator = `|`
@@ -40,13 +43,17 @@ type Database interface {
 type DatabaseIO interface {
 	DatabaseBackups
 	Close() error
+	SetReadOnly() error
+	SetReadWrite() error
 }
 
 type DatabaseReader interface {
 	Get(string, interface{}) error
 	GetValue(string) ([]byte, error)
 	GetAll() (List, error)
+	GetIDs() ([]string, error)
 	Length() int
+	Size() uint64
 	Range(page, count int) (List, error)
 	Pages(int) int
 }
@@ -80,37 +87,6 @@ type DatabaseVersion interface {
 
 type List map[string]Decoder
 
-type Decoder interface {
-	Data() []byte
-	Decode(interface{}) error
-}
-
-type gobDecoder struct {
-	data *bytes.Buffer
-	dec  *gob.Decoder
-}
-
-func newDecoder(data []byte) Decoder {
-	var gd gobDecoder
-	gd.data = bytes.NewBuffer(data)
-	gd.dec = gob.NewDecoder(gd.data)
-	return &gd
-}
-
-func (gd *gobDecoder) Data() []byte {
-	return gd.data.Bytes()
-}
-
-func (gd *gobDecoder) Decode(i interface{}) error {
-	if gd.dec == nil {
-		return errors.New("Decoder not built!")
-	}
-	if gd.data == nil {
-		return errors.New("Empty data")
-	}
-	return gd.dec.Decode(i)
-}
-
 func (l List) Add(key string, content []byte) error {
 	if l == nil {
 		l = make(List)
@@ -118,7 +94,7 @@ func (l List) Add(key string, content []byte) error {
 	if len(key) < 1 {
 		return ErrorKeysNil
 	}
-	l[key] = newDecoder(content)
+	l[key] = newGobDecoder(content)
 	return nil
 }
 
@@ -126,16 +102,18 @@ type BadgerDB struct {
 	dbname string
 	db     *badger.DB
 	//gccount uint64
-	ctx     context.Context
-	cancel  context.CancelFunc
-	version *DatabaseVersioner
+	ctx      context.Context
+	cancel   context.CancelFunc
+	version  *DatabaseVersioner
+	readonly *abool.AtomicBool
 }
 
 type BadgerNode struct {
-	prefix  string
-	id      string
-	db      *badger.DB
-	version *DatabaseVersioner
+	prefix   string
+	id       string
+	db       *badger.DB
+	version  *DatabaseVersioner
+	readonly *abool.AtomicBool
 }
 
 func NewDefaultDatabase(name string) (Database, error) {
@@ -144,6 +122,7 @@ func NewDefaultDatabase(name string) (Database, error) {
 
 func NewInMemoryBadger(ctx context.Context, dur time.Duration) (*BadgerDB, error) {
 	var bdb BadgerDB
+	bdb.readonly = abool.New()
 	db, err := badger.Open(badger.DefaultOptions("").WithInMemory(true))
 	if err != nil {
 		return nil, err
@@ -169,9 +148,38 @@ func NewInMemoryBadger(ctx context.Context, dur time.Duration) (*BadgerDB, error
 	return &bdb, nil
 }
 
+func NewBadgerWithOptions(ctx context.Context, dur time.Duration, opts badger.Options) (*BadgerDB, error) {
+	var bdb BadgerDB
+	bdb.readonly = abool.New()
+	db, err := badger.Open(opts)
+	if err != nil {
+		return nil, err
+	}
+	bdb.db = db
+	if dur < 1*time.Second {
+		dur = 1 * time.Minute
+	}
+	bdb.ctx, bdb.cancel = context.WithCancel(ctx)
+	go bdb.startGC(bdb.ctx, dur)
+
+	v := getVersion(db)
+	if v == Version1 {
+		if lsm, vl := db.Size(); lsm == 0 && vl == 0 {
+			v = LatestVersion
+		}
+	}
+	bdb.version = &DatabaseVersioner{ver: v}
+	if err := bdb.saveVersion(); err != nil {
+		return &bdb, err
+	}
+
+	return &bdb, nil
+}
+
 //New Badger database with the given name as the file structure and the context and duration used for garbage collection.
 func NewBadger(name string, ctx context.Context, dur time.Duration) (*BadgerDB, error) {
 	var bdb BadgerDB
+	bdb.readonly = abool.New()
 	db, err := badger.Open(badger.DefaultOptions(name))
 	if err != nil {
 		return nil, err
@@ -222,6 +230,11 @@ func (bdb *BadgerDB) Get(id string, i interface{}) error {
 }
 
 func (bdb *BadgerDB) GetAndDelete(id string, i interface{}) error {
+	if bdb.readonly != nil {
+		if bdb.readonly.IsSet() {
+			return getBadger(bdb.db, bdb.version.Version(), "", id, i)
+		}
+	}
 	return getAndDeleteBadger(bdb.db, bdb.version.Version(), "", id, i)
 }
 
@@ -230,10 +243,20 @@ func (bdb *BadgerDB) GetValue(id string) ([]byte, error) {
 }
 
 func (bdb *BadgerDB) Set(id string, i interface{}) error {
+	if bdb.readonly != nil {
+		if bdb.readonly.IsSet() {
+			return nil
+		}
+	}
 	return setBadger(bdb.db, bdb.version.Version(), "", id, i)
 }
 
 func (bdb *BadgerDB) SetValue(id string, content []byte) error {
+	if bdb.readonly != nil {
+		if bdb.readonly.IsSet() {
+			return nil
+		}
+	}
 	return setValueBadger(bdb.db, bdb.version.Version(), "", id, content)
 }
 
@@ -251,10 +274,20 @@ func (bdb *BadgerDB) Close() error {
 }
 
 func (bdb *BadgerDB) Delete(id string) error {
+	if bdb.readonly != nil {
+		if bdb.readonly.IsSet() {
+			return nil
+		}
+	}
 	return deleteBadger(bdb.db, bdb.version.Version(), "", id)
 }
 
 func (bdb *BadgerDB) DropNode(id string) error {
+	if bdb.readonly != nil {
+		if bdb.readonly.IsSet() {
+			return nil
+		}
+	}
 	if bdb.db == nil {
 		return ErrorDatabaseNil
 	}
@@ -283,6 +316,7 @@ func (bdb *BadgerDB) NewNode(id string) (Database, error) {
 		return nil, ErrorDatabaseNil
 	}
 	var ndb BadgerNode
+	ndb.readonly = bdb.readonly
 	ndb.db = bdb.db
 	ndb.id = id
 	ndb.version = bdb.version
@@ -336,12 +370,22 @@ func (ndb *BadgerNode) Close() error {
 }
 
 func (ndb *BadgerNode) Delete(id string) error {
+	if ndb.readonly != nil {
+		if ndb.readonly.IsSet() {
+			return nil
+		}
+	}
 	return deleteBadger(ndb.db, ndb.version.Version(), ndb.prefix, id)
 }
 
 func (ndb *BadgerNode) DropNode(id string) error {
 	if ndb.db == nil {
 		return ErrorDatabaseNil
+	}
+	if ndb.readonly != nil {
+		if ndb.readonly.IsSet() {
+			return nil
+		}
 	}
 	if err := ndb.db.DropPrefix([]byte(ndb.prefix + NodeSeparator + id + NodeSeparator)); err != nil {
 		return err
@@ -350,10 +394,20 @@ func (ndb *BadgerNode) DropNode(id string) error {
 }
 
 func (ndb *BadgerNode) Set(id string, i interface{}) error {
+	if ndb.readonly != nil {
+		if ndb.readonly.IsSet() {
+			return nil
+		}
+	}
 	return setBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
 }
 
 func (ndb *BadgerNode) SetValue(id string, content []byte) error {
+	if ndb.readonly != nil {
+		if ndb.readonly.IsSet() {
+			return nil
+		}
+	}
 	return setValueBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, content)
 }
 
@@ -362,6 +416,11 @@ func (ndb *BadgerNode) Get(id string, i interface{}) error {
 }
 
 func (ndb *BadgerNode) GetAndDelete(id string, i interface{}) error {
+	if ndb.readonly != nil {
+		if ndb.readonly.IsSet() {
+			return getBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
+		}
+	}
 	return getAndDeleteBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
 }
 
@@ -385,6 +444,7 @@ func (ndb *BadgerNode) NewNode(id string) (Database, error) {
 		return nil, ErrorDatabaseNil
 	}
 	var node BadgerNode
+	node.readonly = ndb.readonly
 	node.db = ndb.db
 	node.id = id
 	node.version = ndb.version
@@ -393,10 +453,20 @@ func (ndb *BadgerNode) NewNode(id string) (Database, error) {
 }
 
 func (db *BadgerDB) Merge(id string, f MergeFunc) error {
+	if db.readonly != nil {
+		if db.readonly.IsSet() {
+			return nil
+		}
+	}
 	return mergeBadger(db.db, db.version.Version(), "", id, f)
 }
 
 func (db *BadgerNode) Merge(id string, f MergeFunc) error {
+	if db.readonly != nil {
+		if db.readonly.IsSet() {
+			return nil
+		}
+	}
 	return mergeBadger(db.db, db.version.Version(), db.prefix, id, f)
 }
 
@@ -436,6 +506,21 @@ func (dbd *BadgerDB) Pages(count int) int {
 	return pages
 }
 
+func (dbd *BadgerDB) Size() uint64 {
+	_, uncompressedSize := dbd.db.Size()
+	return uint64(uncompressedSize)
+}
+
+func (dbd *BadgerNode) Size() uint64 {
+	_, uncompressedSize := dbd.db.Size()
+	return uint64(uncompressedSize)
+}
+
+func (dbd *BadgerExpiry) Size() uint64 {
+	_, uncompressedSize := dbd.db.Size()
+	return uint64(uncompressedSize)
+}
+
 func (dbd *BadgerNode) Pages(count int) int {
 	l := dbd.Length()
 	if count > l || l == 0 || count == 0 {
@@ -449,33 +534,48 @@ func (dbd *BadgerNode) Pages(count int) int {
 }
 
 func (dbd *BadgerNode) NewExpiryNode(id string, dur time.Duration, dbv *DatabaseVersioner) (Database, error) {
-	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv)
+	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly)
 }
 
 func (dbd *BadgerDB) NewExpiryNode(id string, dur time.Duration, dbv *DatabaseVersioner) (Database, error) {
-	return newExpiryNode(dbd.db, "", id, dur, dbv)
+	return newExpiryNode(dbd.db, "", id, dur, dbv, dbd.readonly)
 }
 
 func (dbd *BadgerDB) Clear() error {
+	if dbd.readonly != nil {
+		if dbd.readonly.IsSet() {
+			return nil
+		}
+	}
 	return clearDB(dbd)
 }
 
 func (dbd *BadgerNode) Clear() error {
+	if dbd.readonly != nil {
+		if dbd.readonly.IsSet() {
+			return nil
+		}
+	}
 	return clearDB(dbd)
 }
 
 func (dbd *BadgerExpiry) Clear() error {
+	if dbd.readonly != nil {
+		if dbd.readonly.IsSet() {
+			return nil
+		}
+	}
 	return clearDB(dbd)
 }
 
 func clearDB(dbd Database) error {
-	items, err := dbd.GetAll()
+	ids, err := dbd.GetIDs()
 	if err != nil {
 		return err
 	}
 	var errs []error
-	if len(items) > 0 {
-		for id, _ := range items {
+	if len(ids) > 0 {
+		for _, id := range ids {
 			if err := dbd.Delete(id); err != nil {
 				errs = append(errs, err)
 				continue
@@ -509,5 +609,61 @@ func clearDB(dbd Database) error {
 		}
 
 	}
+	return nil
+}
+
+func (db *BadgerDB) GetIDs() ([]string, error) {
+	return getAllIDsBadger(db.db, db.Version(), "")
+}
+
+func (db *BadgerNode) GetIDs() ([]string, error) {
+	return getAllIDsBadger(db.db, db.Version(), db.prefix)
+}
+
+func (db *BadgerDB) SetReadOnly() error {
+	if db.readonly == nil {
+		return nil
+	}
+	db.readonly.Set()
+	return nil
+}
+
+func (db *BadgerDB) SetReadWrite() error {
+	if db.readonly == nil {
+		return nil
+	}
+	db.readonly.UnSet()
+	return nil
+}
+
+func (db *BadgerNode) SetReadOnly() error {
+	if db.readonly == nil {
+		return nil
+	}
+	db.readonly.Set()
+	return nil
+}
+
+func (db *BadgerNode) SetReadWrite() error {
+	if db.readonly == nil {
+		return nil
+	}
+	db.readonly.UnSet()
+	return nil
+}
+
+func (db *BadgerExpiry) SetReadOnly() error {
+	if db.readonly == nil {
+		return nil
+	}
+	db.readonly.Set()
+	return nil
+}
+
+func (db *BadgerExpiry) SetReadWrite() error {
+	if db.readonly == nil {
+		return nil
+	}
+	db.readonly.UnSet()
 	return nil
 }

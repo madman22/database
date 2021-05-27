@@ -8,18 +8,20 @@ import (
 	"strings"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v2"
+	badger "github.com/dgraph-io/badger/v3"
+	"github.com/tevino/abool"
 )
 
 type BadgerExpiry struct {
-	db      *badger.DB
-	timeout time.Duration
-	prefix  string
-	id      string
-	version *DatabaseVersioner
+	db       *badger.DB
+	timeout  time.Duration
+	prefix   string
+	id       string
+	version  *DatabaseVersioner
+	readonly *abool.AtomicBool
 }
 
-func newExpiryNode(db *badger.DB, prefix, id string, dur time.Duration, dbv *DatabaseVersioner) (Database, error) {
+func newExpiryNode(db *badger.DB, prefix, id string, dur time.Duration, dbv *DatabaseVersioner, readonly *abool.AtomicBool) (Database, error) {
 	if db == nil {
 		return nil, ErrorDatabaseNil
 	}
@@ -30,6 +32,7 @@ func newExpiryNode(db *badger.DB, prefix, id string, dur time.Duration, dbv *Dat
 		return nil, ErrorInvalidID
 	}
 	var de BadgerExpiry
+	de.readonly = readonly
 	de.id = id
 	de.timeout = dur
 	de.db = db
@@ -81,12 +84,22 @@ func (ndb *BadgerExpiry) Close() error {
 }
 
 func (ndb *BadgerExpiry) Delete(id string) error {
+	if ndb.readonly != nil {
+		if ndb.readonly.IsSet() {
+			return nil
+		}
+	}
 	return deleteBadger(ndb.db, ndb.version.Version(), ndb.prefix, id)
 }
 
 func (ndb *BadgerExpiry) DropNode(id string) error {
 	if ndb.db == nil {
 		return ErrorDatabaseNil
+	}
+	if ndb.readonly != nil {
+		if ndb.readonly.IsSet() {
+			return nil
+		}
 	}
 	if err := ndb.db.DropPrefix([]byte(ndb.prefix + NodeSeparator + id + NodeSeparator)); err != nil {
 		return err
@@ -100,6 +113,11 @@ func (ndb *BadgerExpiry) Set(id string, i interface{}) error {
 	}
 	if len(id) < 1 {
 		return ErrorInvalidID
+	}
+	if ndb.readonly != nil {
+		if ndb.readonly.IsSet() {
+			return nil
+		}
 	}
 	if ndb.version.Version() > Version1 {
 		id = EntityPrefix + id
@@ -123,6 +141,11 @@ func (ndb *BadgerExpiry) SetValue(id string, content []byte) error {
 	if len(id) < 1 {
 		return ErrorInvalidID
 	}
+	if ndb.readonly != nil {
+		if ndb.readonly.IsSet() {
+			return nil
+		}
+	}
 	if ndb.version.Version() > Version1 {
 		id = EntityPrefix + id
 	}
@@ -141,6 +164,12 @@ func (ndb *BadgerExpiry) Get(id string, i interface{}) error {
 }
 
 func (ndb *BadgerExpiry) GetAndDelete(id string, i interface{}) error {
+	if ndb.readonly != nil {
+		if ndb.readonly.IsSet() {
+			//return nil
+			return getBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
+		}
+	}
 	return getAndDeleteBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
 }
 
@@ -164,6 +193,7 @@ func (ndb *BadgerExpiry) NewNode(id string) (Database, error) {
 		return nil, ErrorDatabaseNil
 	}
 	var node BadgerNode
+	node.readonly = ndb.readonly
 	node.db = ndb.db
 	node.id = id
 	node.version = ndb.version
@@ -172,6 +202,11 @@ func (ndb *BadgerExpiry) NewNode(id string) (Database, error) {
 }
 
 func (db *BadgerExpiry) Merge(id string, f MergeFunc) error {
+	if db.readonly != nil {
+		if db.readonly.IsSet() {
+			return nil
+		}
+	}
 	return mergeBadger(db.db, db.version.Version(), db.prefix, id, f)
 }
 
@@ -200,5 +235,9 @@ func (dbd *BadgerExpiry) Pages(count int) int {
 }
 
 func (dbd *BadgerExpiry) NewExpiryNode(id string, dur time.Duration, dbv *DatabaseVersioner) (Database, error) {
-	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv)
+	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly)
+}
+
+func (db *BadgerExpiry) GetIDs() ([]string, error) {
+	return getAllIDsBadger(db.db, db.Version(), db.prefix)
 }
