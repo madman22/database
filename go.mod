@@ -3,7 +3,6 @@ module github.com/madman22/database
 go 1.16
 
 require (
-	github.com/dgraph-io/badger/v2 v2.2007.2
 	github.com/dgraph-io/badger/v3 v3.2011.1
 	github.com/myesui/uuid v1.0.0 // indirect
 	github.com/spf13/afero v1.5.1

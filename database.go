@@ -56,6 +56,7 @@ type DatabaseReader interface {
 	Size() uint64
 	Range(page, count int) (List, error)
 	Pages(int) int
+	Prefix() string
 }
 
 type DatabaseWriter interface {
@@ -666,4 +667,14 @@ func (db *BadgerExpiry) SetReadWrite() error {
 	}
 	db.readonly.UnSet()
 	return nil
+}
+
+func (db *BadgerDB) Prefix() string {
+	return ""
+}
+func (db *BadgerNode) Prefix() string {
+	return db.prefix
+}
+func (db *BadgerExpiry) Prefix() string {
+	return db.prefix
 }
