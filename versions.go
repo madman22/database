@@ -209,7 +209,7 @@ func getBadger(db *badger.DB, dbv Version, prefix, oid string, i interface{}) er
 	return nil
 }
 
-func getAndDeleteBadger(db *badger.DB, dbv Version, prefix, id string, i interface{}) error {
+func getAndDeleteBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string, i interface{}) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
@@ -244,6 +244,9 @@ func getAndDeleteBadger(db *badger.DB, dbv Version, prefix, id string, i interfa
 		}
 		return nil
 	}); err != nil {
+		return err
+	}
+	if err := subs.Delete(id, prefix); err != nil {
 		return err
 	}
 	return nil
@@ -283,7 +286,7 @@ func getValueBadger(db *badger.DB, dbv Version, prefix, id string) ([]byte, erro
 	return content, nil
 }
 
-func setBadger(db *badger.DB, dbv Version, prefix, id string, i interface{}) error {
+func setBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string, i interface{}) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
@@ -303,17 +306,20 @@ func setBadger(db *badger.DB, dbv Version, prefix, id string, i interface{}) err
 		ent := badger.NewEntry([]byte(prefix+id), enc.Data())
 		return txn.SetEntry(ent)
 	}
+	if err := subs.Send(id, prefix, enc.Data()); err != nil {
+		return err
+	}
 	return db.Update(f)
 }
 
-func setValueBadger(db *badger.DB, dbv Version, prefix, id string, content []byte) error {
+func setValueBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string, content []byte) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
 	if len(id) < 1 {
 		return ErrorInvalidID
 	}
-	if dbv >= Version2 {
+	if dbv >= Version2 && !strings.Contains(id, EntityPrefix) {
 		id = EntityPrefix + id
 	}
 	err := db.Update(func(txn *badger.Txn) error {
@@ -323,20 +329,26 @@ func setValueBadger(db *badger.DB, dbv Version, prefix, id string, content []byt
 	if err != nil {
 		return err
 	}
+	if err := subs.Send(id, prefix, content); err != nil {
+		return err
+	}
 	return nil
 }
 
-func deleteBadger(db *badger.DB, dbv Version, prefix, id string) error {
+func deleteBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
-	if dbv >= Version2 {
+	if dbv >= Version2 && !strings.Contains(id, EntityPrefix) {
 		id = EntityPrefix + id
 	}
 	f := func(txn *badger.Txn) error {
 		return txn.Delete([]byte(prefix + id))
 	}
 	if err := db.Update(f); err != nil {
+		return err
+	}
+	if err := subs.Delete(id, prefix); err != nil {
 		return err
 	}
 	return nil
@@ -513,7 +525,7 @@ func getAllIDsBadgerV2(db *badger.DB, prefix string) ([]string, error) {
 	return idList, nil
 }
 
-func mergeBadger(db *badger.DB, dbv Version, prefix, id string, f MergeFunc) error {
+func mergeBadger(db *badger.DB, dbv Version, prefix, id string, f MergeFunc, subs *dbSubscribe) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
@@ -554,6 +566,11 @@ func mergeBadger(db *badger.DB, dbv Version, prefix, id string, f MergeFunc) err
 	}
 	if err := txn.Commit(); err != nil {
 		return err
+	}
+	if subs != nil {
+		if err := subs.Send(id, prefix, newdata); err != nil {
+			return err
+		}
 	}
 	return nil
 }

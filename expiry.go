@@ -19,9 +19,10 @@ type BadgerExpiry struct {
 	id       string
 	version  *DatabaseVersioner
 	readonly *abool.AtomicBool
+	subs     *dbSubscribe
 }
 
-func newExpiryNode(db *badger.DB, prefix, id string, dur time.Duration, dbv *DatabaseVersioner, readonly *abool.AtomicBool) (Database, error) {
+func newExpiryNode(db *badger.DB, prefix, id string, dur time.Duration, dbv *DatabaseVersioner, readonly *abool.AtomicBool, subs *dbSubscribe) (Database, error) {
 	if db == nil {
 		return nil, ErrorDatabaseNil
 	}
@@ -32,6 +33,7 @@ func newExpiryNode(db *badger.DB, prefix, id string, dur time.Duration, dbv *Dat
 		return nil, ErrorInvalidID
 	}
 	var de BadgerExpiry
+	de.subs = subs
 	de.readonly = readonly
 	de.id = id
 	de.timeout = dur
@@ -52,12 +54,14 @@ func (bdb *BadgerExpiry) Parent() (Database, error) {
 	lindex := strings.LastIndex(nid, NodeSeparator)
 	if lindex < 0 {
 		var ndb BadgerNode
+		ndb.subs = bdb.subs
 		ndb.prefix = ""
 		ndb.db = bdb.db
 		ndb.id = ""
 		return &ndb, nil
 	} else if lindex == 0 {
 		var ndb BadgerNode
+		ndb.subs = bdb.subs
 		ndb.id = nid[1:]
 		ndb.prefix = NodeSeparator + ndb.id
 		ndb.db = bdb.db
@@ -66,12 +70,14 @@ func (bdb *BadgerExpiry) Parent() (Database, error) {
 	id := nid[lindex:]
 	if len(id) < 1 {
 		var ndb BadgerNode
+		ndb.subs = bdb.subs
 		ndb.prefix = ""
 		ndb.db = bdb.db
 		ndb.id = ""
 		return &ndb, nil
 	}
 	var ndb BadgerNode
+	ndb.subs = bdb.subs
 	ndb.prefix = nid + NodeSeparator
 	ndb.db = bdb.db
 	ndb.id = id
@@ -89,7 +95,7 @@ func (ndb *BadgerExpiry) Delete(id string) error {
 			return nil
 		}
 	}
-	return deleteBadger(ndb.db, ndb.version.Version(), ndb.prefix, id)
+	return deleteBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id)
 }
 
 func (ndb *BadgerExpiry) DropNode(id string) error {
@@ -131,6 +137,12 @@ func (ndb *BadgerExpiry) Set(id string, i interface{}) error {
 		ent := badger.NewEntry([]byte(ndb.prefix+id), buf.Bytes()).WithTTL(ndb.timeout)
 		return txn.SetEntry(ent)
 	}
+
+	if ndb.subs != nil {
+		if err := ndb.subs.Send(id, ndb.prefix, buf.Bytes()); err != nil {
+			return err
+		}
+	}
 	return ndb.db.Update(f)
 }
 
@@ -156,6 +168,11 @@ func (ndb *BadgerExpiry) SetValue(id string, content []byte) error {
 	if err != nil {
 		return err
 	}
+	if ndb.subs != nil {
+		if err := ndb.subs.Send(id, ndb.prefix, content); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -170,7 +187,7 @@ func (ndb *BadgerExpiry) GetAndDelete(id string, i interface{}) error {
 			return getBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
 		}
 	}
-	return getAndDeleteBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
+	return getAndDeleteBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, i)
 }
 
 func (ndb *BadgerExpiry) GetValue(id string) ([]byte, error) {
@@ -193,6 +210,7 @@ func (ndb *BadgerExpiry) NewNode(id string) (Database, error) {
 		return nil, ErrorDatabaseNil
 	}
 	var node BadgerNode
+	node.subs = newDbSubscribe(ndb.subs.queue)
 	node.readonly = ndb.readonly
 	node.db = ndb.db
 	node.id = id
@@ -207,7 +225,7 @@ func (db *BadgerExpiry) Merge(id string, f MergeFunc) error {
 			return nil
 		}
 	}
-	return mergeBadger(db.db, db.version.Version(), db.prefix, id, f)
+	return mergeBadger(db.db, db.version.Version(), db.prefix, id, f, db.subs)
 }
 
 func (ndb *BadgerExpiry) Length() int {
@@ -235,7 +253,7 @@ func (dbd *BadgerExpiry) Pages(count int) int {
 }
 
 func (dbd *BadgerExpiry) NewExpiryNode(id string, dur time.Duration, dbv *DatabaseVersioner) (Database, error) {
-	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly)
+	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly, dbd.subs)
 }
 
 func (db *BadgerExpiry) GetIDs() ([]string, error) {
