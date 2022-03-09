@@ -30,6 +30,7 @@ var ErrorNotFound = errors.New("Item not found in database")
 var ErrorNilValue = errors.New("Nil Interface Value")
 var ErrorKeysNil = errors.New("Key Map is nil, try adding elements with Set")
 var ErrorInvalidID = errors.New("Cannot use thid ID, conflicts with built-in keys")
+var ErrorInvalidVersion = errors.New("Version not supported")
 
 type Database interface {
 	DatabaseReader
@@ -59,7 +60,10 @@ type DatabaseReader interface {
 	Range(page, count int) (List, error)
 	Pages(int) int
 	Prefix() string
+	ForEach(ForEachFunc) error
 }
+
+type ForEachFunc func(string, Decoder) error
 
 type DatabaseWriter interface {
 	Set(string, interface{}) error
@@ -118,7 +122,7 @@ type BadgerNode struct {
 	db       *badger.DB
 	version  *DatabaseVersioner
 	readonly *abool.AtomicBool
-	subs     *dbSubscribe
+	//subs     *dbSubscribe
 }
 
 func NewDefaultDatabase(name string) (Database, error) {
@@ -278,6 +282,11 @@ func (bdb *BadgerDB) Close() error {
 	if bdb.cancel != nil {
 		bdb.cancel()
 	}
+	if bdb.subs != nil {
+		if err := bdb.subs.Stop(); err != nil {
+			return err
+		}
+	}
 	return bdb.db.Close()
 }
 
@@ -329,7 +338,7 @@ func (bdb *BadgerDB) NewNode(id string) (Database, error) {
 		return nil, ErrorDatabaseNil
 	}
 	var ndb BadgerNode
-	ndb.subs = newDbSubscribe(bdb.subs.queue)
+	//ndb.subs = newDbSubscribe(bdb.subs.queue)
 	ndb.readonly = bdb.readonly
 	ndb.db = bdb.db
 	ndb.id = id
@@ -349,7 +358,7 @@ func (bdb *BadgerNode) Parent() (Database, error) {
 	lindex := strings.LastIndex(nid, NodeSeparator)
 	if lindex < 0 {
 		var ndb BadgerNode
-		ndb.subs = newDbSubscribe(bdb.subs.queue)
+		//ndb.subs = newDbSubscribe(bdb.subs.queue)
 		ndb.prefix = ""
 		ndb.db = bdb.db
 		ndb.id = ""
@@ -357,7 +366,7 @@ func (bdb *BadgerNode) Parent() (Database, error) {
 		return &ndb, nil
 	} else if lindex == 0 {
 		var ndb BadgerNode
-		ndb.subs = newDbSubscribe(bdb.subs.queue)
+		//ndb.subs = newDbSubscribe(bdb.subs.queue)
 		ndb.id = nid[1:]
 		ndb.prefix = NodeSeparator + ndb.id
 		ndb.db = bdb.db
@@ -367,7 +376,7 @@ func (bdb *BadgerNode) Parent() (Database, error) {
 	id := nid[lindex:]
 	if len(id) < 1 {
 		var ndb BadgerNode
-		ndb.subs = newDbSubscribe(bdb.subs.queue)
+		//ndb.subs = newDbSubscribe(bdb.subs.queue)
 		ndb.prefix = ""
 		ndb.db = bdb.db
 		ndb.id = ""
@@ -375,7 +384,7 @@ func (bdb *BadgerNode) Parent() (Database, error) {
 		return &ndb, nil
 	}
 	var ndb BadgerNode
-	ndb.subs = newDbSubscribe(bdb.subs.queue)
+	//ndb.subs = newDbSubscribe(bdb.subs.queue)
 	ndb.prefix = nid + NodeSeparator
 	ndb.db = bdb.db
 	ndb.id = id
@@ -393,7 +402,8 @@ func (ndb *BadgerNode) Delete(id string) error {
 			return nil
 		}
 	}
-	return deleteBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id)
+	//return deleteBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id)
+	return deleteBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id)
 }
 
 func (ndb *BadgerNode) DropNode(id string) error {
@@ -408,9 +418,9 @@ func (ndb *BadgerNode) DropNode(id string) error {
 	if err := ndb.db.DropPrefix([]byte(ndb.prefix + NodeSeparator + id + NodeSeparator)); err != nil {
 		return err
 	}
-	if err := ndb.subs.DropPrefix(ndb.prefix + NodeSeparator + id + NodeSeparator); err != nil {
+	/*if err := ndb.subs.DropPrefix(ndb.prefix + NodeSeparator + id + NodeSeparator); err != nil {
 		return err
-	}
+	}*/
 	return nil
 }
 
@@ -420,7 +430,8 @@ func (ndb *BadgerNode) Set(id string, i interface{}) error {
 			return nil
 		}
 	}
-	return setBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, i)
+	//return setBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, i)
+	return setBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id, i)
 }
 
 func (ndb *BadgerNode) SetValue(id string, content []byte) error {
@@ -429,7 +440,8 @@ func (ndb *BadgerNode) SetValue(id string, content []byte) error {
 			return nil
 		}
 	}
-	return setValueBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, content)
+	//return setValueBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, content)
+	return setValueBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id, content)
 }
 
 func (ndb *BadgerNode) Get(id string, i interface{}) error {
@@ -442,7 +454,8 @@ func (ndb *BadgerNode) GetAndDelete(id string, i interface{}) error {
 			return getBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
 		}
 	}
-	return getAndDeleteBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, i)
+	//return getAndDeleteBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, i)
+	return getAndDeleteBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id, i)
 }
 
 func (ndb *BadgerNode) GetValue(id string) ([]byte, error) {
@@ -465,7 +478,7 @@ func (ndb *BadgerNode) NewNode(id string) (Database, error) {
 		return nil, ErrorDatabaseNil
 	}
 	var node BadgerNode
-	node.subs = newDbSubscribe(ndb.subs.queue)
+	//node.subs = newDbSubscribe(ndb.subs.queue)
 	node.readonly = ndb.readonly
 	node.db = ndb.db
 	node.id = id
@@ -489,7 +502,8 @@ func (db *BadgerNode) Merge(id string, f MergeFunc) error {
 			return nil
 		}
 	}
-	return mergeBadger(db.db, db.version.Version(), db.prefix, id, f, db.subs)
+	//return mergeBadger(db.db, db.version.Version(), db.prefix, id, f, db.subs)
+	return mergeBadger(db.db, db.version.Version(), db.prefix, id, f, nil)
 }
 
 func (bdb *BadgerDB) Length() int {
@@ -556,7 +570,8 @@ func (dbd *BadgerNode) Pages(count int) int {
 }
 
 func (dbd *BadgerNode) NewExpiryNode(id string, dur time.Duration, dbv *DatabaseVersioner) (Database, error) {
-	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly, dbd.subs)
+	//return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly, dbd.subs)
+	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly, nil)
 }
 
 func (dbd *BadgerDB) NewExpiryNode(id string, dur time.Duration, dbv *DatabaseVersioner) (Database, error) {

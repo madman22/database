@@ -246,6 +246,9 @@ func getAndDeleteBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, i
 	}); err != nil {
 		return err
 	}
+	if subs == nil {
+		return nil
+	}
 	if err := subs.Delete(id, prefix); err != nil {
 		return err
 	}
@@ -306,8 +309,10 @@ func setBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string,
 		ent := badger.NewEntry([]byte(prefix+id), enc.Data())
 		return txn.SetEntry(ent)
 	}
-	if err := subs.Send(id, prefix, enc.Data()); err != nil {
-		return err
+	if subs != nil {
+		if err := subs.Send(id, prefix, enc.Data()); err != nil {
+			return err
+		}
 	}
 	return db.Update(f)
 }
@@ -329,6 +334,9 @@ func setValueBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id st
 	if err != nil {
 		return err
 	}
+	if subs == nil {
+		return nil
+	}
 	if err := subs.Send(id, prefix, content); err != nil {
 		return err
 	}
@@ -347,6 +355,9 @@ func deleteBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id stri
 	}
 	if err := db.Update(f); err != nil {
 		return err
+	}
+	if subs == nil {
+		return nil
 	}
 	if err := subs.Delete(id, prefix); err != nil {
 		return err

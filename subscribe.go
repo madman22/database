@@ -47,11 +47,13 @@ func (db *BadgerNode) Queue() (chan DatabaseSubscribeItem, error) {
 		for dec := range dbr {
 			switch dec.Op {
 			case DatabaseWrite:
-				if err := setValueBadger(db.db, db.Version(), db.subs, dec.Prefix, dec.ID, dec.Data); err != nil {
+				//if err := setValueBadger(db.db, db.Version(), db.subs, dec.Prefix, dec.ID, dec.Data); err != nil {
+				if err := setValueBadger(db.db, db.Version(), nil, dec.Prefix, dec.ID, dec.Data); err != nil {
 					continue
 				}
 			case DatabaseDelete:
-				if err := deleteBadger(db.db, db.Version(), db.subs, dec.Prefix, dec.ID); err != nil {
+				//if err := deleteBadger(db.db, db.Version(), db.subs, dec.Prefix, dec.ID); err != nil {
+				if err := deleteBadger(db.db, db.Version(), nil, dec.Prefix, dec.ID); err != nil {
 					continue
 				}
 			case DatabaseDropPrefix:
@@ -71,11 +73,13 @@ func (db *BadgerExpiry) Queue() (chan DatabaseSubscribeItem, error) {
 		for dec := range dbr {
 			switch dec.Op {
 			case DatabaseWrite:
-				if err := setValueBadger(db.db, db.Version(), db.subs, dec.Prefix, dec.ID, dec.Data); err != nil {
+				if err := setValueBadger(db.db, db.Version(), nil, dec.Prefix, dec.ID, dec.Data); err != nil {
+					//if err := setValueBadger(db.db, db.Version(), db.subs, dec.Prefix, dec.ID, dec.Data); err != nil {
 					continue
 				}
 			case DatabaseDelete:
-				if err := deleteBadger(db.db, db.Version(), db.subs, dec.Prefix, dec.ID); err != nil {
+				//if err := deleteBadger(db.db, db.Version(), db.subs, dec.Prefix, dec.ID); err != nil {
+				if err := deleteBadger(db.db, db.Version(), nil, dec.Prefix, dec.ID); err != nil {
 					continue
 				}
 			case DatabaseDropPrefix:
@@ -150,6 +154,13 @@ func newDbSubscribe(parent chan DatabaseSubscribeItem) *dbSubscribe {
 	return &dbs
 }
 
+func (dbs *dbSubscribe) Stop() error {
+	if dbs.queue != nil {
+		close(dbs.queue)
+	}
+	return nil
+}
+
 func (db *BadgerDB) Subscribe(c chan DatabaseSubscribeItem) error {
 	if db.subs == nil {
 		return errors.New("Subscriptions not built")
@@ -165,31 +176,35 @@ func (db *BadgerDB) UnSubscribe(c chan DatabaseSubscribeItem) error {
 }
 
 func (db *BadgerNode) Subscribe(c chan DatabaseSubscribeItem) error {
-	if db.subs == nil {
+	/*if db.subs == nil {
 		return errors.New("Subscriptions not built")
 	}
-	return db.subs.Subscribe(c)
+	return db.subs.Subscribe(c)*/
+	return nil
 }
 
 func (db *BadgerNode) UnSubscribe(c chan DatabaseSubscribeItem) error {
-	if db.subs == nil {
+	/*if db.subs == nil {
 		return errors.New("Subscriptions not built")
 	}
-	return db.subs.UnSubscribe(c)
+	return db.subs.UnSubscribe(c)*/
+	return nil
 }
 
 func (db *BadgerExpiry) Subscribe(c chan DatabaseSubscribeItem) error {
-	if db.subs == nil {
+	/*if db.subs == nil {
 		return errors.New("Subscriptions not built")
 	}
-	return db.subs.Subscribe(c)
+	return db.subs.Subscribe(c)*/
+	return nil
 }
 
 func (db *BadgerExpiry) UnSubscribe(c chan DatabaseSubscribeItem) error {
-	if db.subs == nil {
+	/*if db.subs == nil {
 		return errors.New("Subscriptions not built")
 	}
-	return db.subs.UnSubscribe(c)
+	return db.subs.UnSubscribe(c)*/
+	return nil
 }
 
 func (dbs *dbSubscribe) Subscribe(c chan DatabaseSubscribeItem) error {
