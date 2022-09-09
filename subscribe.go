@@ -7,15 +7,6 @@ import (
 	"sync"
 )
 
-type Subscription interface {
-	Subscribe(chan DatabaseSubscribeItem) error
-	UnSubscribe(chan DatabaseSubscribeItem) error
-}
-
-type Subscriber interface {
-	Queue() (chan DatabaseSubscribeItem, error)
-}
-
 // Queue receiver is responsible for closing the channel
 func (db *BadgerDB) Queue() (chan DatabaseSubscribeItem, error) {
 	dbr := make(chan DatabaseSubscribeItem)
@@ -97,13 +88,6 @@ type dbSubscribe struct {
 	queue   chan DatabaseSubscribeItem
 	parent  chan DatabaseSubscribeItem
 	subsmux sync.RWMutex
-}
-
-type DatabaseSubscribeItem struct {
-	ID     string
-	Prefix string
-	Op     Operation
-	Data   []byte
 }
 
 func (dsi *DatabaseSubscribeItem) DecodeGob(i interface{}) error {

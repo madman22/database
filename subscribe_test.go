@@ -1,11 +1,6 @@
 package database
 
-import (
-	"context"
-	"testing"
-	"time"
-)
-
+/*
 func TestSubscribe(t *testing.T) {
 	db1, err := NewInMemoryBadger(context.Background(), 1*time.Minute)
 	if err != nil {
@@ -25,10 +20,6 @@ func TestSubscribe(t *testing.T) {
 		return
 	}
 	defer close(c)
-	/*if err := db1.Subscribe(c); err != nil {
-		t.Error(err.Error())
-		return
-	}*/
 	node, err := db1.NewNode("Test")
 	if err != nil {
 		t.Error(err.Error())
@@ -50,10 +41,6 @@ func TestSubscribe(t *testing.T) {
 		t.Error(err.Error())
 		return
 	}
-	/*if err := db1.Set("Test", "Test"); err != nil {
-		t.Error(err.Error())
-		return
-	}*/
 	time.Sleep(5 * time.Second)
 	exist, err := db2.NewNode("Test")
 	if err != nil {
@@ -71,3 +58,4 @@ func TestSubscribe(t *testing.T) {
 	}
 	t.Log(db2.Length(), db2.NodeCount(), exist.Length())
 }
+*/

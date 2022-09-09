@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -294,7 +295,12 @@ func setBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string,
 		return ErrorDatabaseNil
 	}
 	if len(id) < 1 {
-		return ErrorInvalidID
+		pc, _, _, ok := runtime.Caller(1)
+		details := runtime.FuncForPC(pc)
+		if ok && details != nil {
+			return errors.New(ErrorMissingID.Error() + " " + details.Name())
+		}
+		return ErrorMissingID
 	}
 	if dbv >= Version2 {
 		id = EntityPrefix + id
@@ -322,7 +328,7 @@ func setValueBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id st
 		return ErrorDatabaseNil
 	}
 	if len(id) < 1 {
-		return ErrorInvalidID
+		return ErrorMissingID
 	}
 	if dbv >= Version2 && !strings.Contains(id, EntityPrefix) {
 		id = EntityPrefix + id

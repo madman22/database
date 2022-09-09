@@ -14,6 +14,8 @@ import (
 	badger "github.com/dgraph-io/badger/v3"
 )
 
+//github.com/dgraph-io/badger/v3 v3.2011.1
+
 const NodeSeparator = `|`
 const EntityPrefix = `**`
 const SettingsPrefix = `$$`
@@ -29,7 +31,7 @@ var ErrorMissingID = errors.New("ID cannot be empty")
 var ErrorNotFound = errors.New("Item not found in database")
 var ErrorNilValue = errors.New("Nil Interface Value")
 var ErrorKeysNil = errors.New("Key Map is nil, try adding elements with Set")
-var ErrorInvalidID = errors.New("Cannot use thid ID, conflicts with built-in keys")
+var ErrorInvalidID = errors.New("Cannot use this ID, conflicts with built-in keys")
 var ErrorInvalidVersion = errors.New("Version not supported")
 
 type Database interface {
@@ -61,6 +63,7 @@ type DatabaseReader interface {
 	Pages(int) int
 	Prefix() string
 	ForEach(ForEachFunc) error
+	Exists(string) bool
 }
 
 type ForEachFunc func(string, Decoder) error
@@ -187,12 +190,46 @@ func NewBadgerWithOptions(ctx context.Context, dur time.Duration, opts badger.Op
 	return &bdb, nil
 }
 
-//New Badger database with the given name as the file structure and the context and duration used for garbage collection.
+// New Badger database with the given name as the file structure and the context and duration used for garbage collection.
 func NewBadger(name string, ctx context.Context, dur time.Duration) (*BadgerDB, error) {
 	var bdb BadgerDB
 	bdb.subs = newDbSubscribe(nil)
 	bdb.readonly = abool.New()
 	db, err := badger.Open(badger.DefaultOptions(name))
+	if err != nil {
+		return nil, err
+	}
+	bdb.db = db
+	if dur < 1*time.Second {
+		dur = 1 * time.Minute
+	}
+	bdb.ctx, bdb.cancel = context.WithCancel(ctx)
+	go bdb.startGC(bdb.ctx, dur)
+
+	v := getVersion(db)
+	if v == Version1 {
+		if lsm, vl := db.Size(); lsm == 0 && vl == 0 {
+			v = LatestVersion
+		}
+	}
+	bdb.version = &DatabaseVersioner{ver: v}
+	if err := bdb.saveVersion(); err != nil {
+		return &bdb, err
+	}
+
+	return &bdb, nil
+}
+
+func NewBadgerWithEncryption(name string, ctx context.Context, dur time.Duration, enc []byte) (*BadgerDB, error) {
+	var bdb BadgerDB
+	bdb.subs = newDbSubscribe(nil)
+	bdb.readonly = abool.New()
+
+	opts := badger.DefaultOptions(name)
+	opts.EncryptionKey = enc
+	opts.IndexCacheSize = 100 << 20
+	//db, err := badger.Open(badger.DefaultOptions(name))
+	db, err := badger.Open(opts)
 	if err != nil {
 		return nil, err
 	}
