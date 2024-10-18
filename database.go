@@ -11,7 +11,7 @@ import (
 	"github.com/tevino/abool"
 
 	//badgerv1 "github.com/dgraph-io/badger"
-	badger "github.com/dgraph-io/badger/v3"
+	badger "github.com/dgraph-io/badger/v4"
 )
 
 //github.com/dgraph-io/badger/v3 v3.2011.1
@@ -41,8 +41,8 @@ type Database interface {
 	DatabaseIO
 	DatabaseExpiry
 	DatabaseVersion
-	Subscription
-	Subscriber
+	//Subscription
+	//Subscriber
 }
 
 type DatabaseIO interface {
@@ -116,7 +116,7 @@ type BadgerDB struct {
 	cancel   context.CancelFunc
 	version  *DatabaseVersioner
 	readonly *abool.AtomicBool
-	subs     *dbSubscribe
+	//subs     *dbSubscribe
 }
 
 type BadgerNode struct {
@@ -134,7 +134,7 @@ func NewDefaultDatabase(name string) (Database, error) {
 
 func NewInMemoryBadger(ctx context.Context, dur time.Duration) (*BadgerDB, error) {
 	var bdb BadgerDB
-	bdb.subs = newDbSubscribe(nil)
+	//bdb.subs = newDbSubscribe(nil)
 	bdb.readonly = abool.New()
 	db, err := badger.Open(badger.DefaultOptions("").WithInMemory(true))
 	if err != nil {
@@ -163,7 +163,7 @@ func NewInMemoryBadger(ctx context.Context, dur time.Duration) (*BadgerDB, error
 
 func NewBadgerWithOptions(ctx context.Context, dur time.Duration, opts badger.Options) (*BadgerDB, error) {
 	var bdb BadgerDB
-	bdb.subs = newDbSubscribe(nil)
+	//bdb.subs = newDbSubscribe(nil)
 	bdb.readonly = abool.New()
 	db, err := badger.Open(opts)
 	if err != nil {
@@ -193,7 +193,7 @@ func NewBadgerWithOptions(ctx context.Context, dur time.Duration, opts badger.Op
 // New Badger database with the given name as the file structure and the context and duration used for garbage collection.
 func NewBadger(name string, ctx context.Context, dur time.Duration) (*BadgerDB, error) {
 	var bdb BadgerDB
-	bdb.subs = newDbSubscribe(nil)
+	//bdb.subs = newDbSubscribe(nil)
 	bdb.readonly = abool.New()
 	db, err := badger.Open(badger.DefaultOptions(name))
 	if err != nil {
@@ -222,7 +222,7 @@ func NewBadger(name string, ctx context.Context, dur time.Duration) (*BadgerDB, 
 
 func NewBadgerWithEncryption(name string, ctx context.Context, dur time.Duration, enc []byte) (*BadgerDB, error) {
 	var bdb BadgerDB
-	bdb.subs = newDbSubscribe(nil)
+	//bdb.subs = newDbSubscribe(nil)
 	bdb.readonly = abool.New()
 
 	opts := badger.DefaultOptions(name)
@@ -284,7 +284,8 @@ func (bdb *BadgerDB) GetAndDelete(id string, i interface{}) error {
 			return getBadger(bdb.db, bdb.version.Version(), "", id, i)
 		}
 	}
-	return getAndDeleteBadger(bdb.db, bdb.version.Version(), bdb.subs, "", id, i)
+	//return getAndDeleteBadger(bdb.db, bdb.version.Version(), bdb.subs, "", id, i)
+	return getAndDeleteBadger(bdb.db, bdb.version.Version(), "", id, i)
 }
 
 func (bdb *BadgerDB) GetValue(id string) ([]byte, error) {
@@ -297,7 +298,8 @@ func (bdb *BadgerDB) Set(id string, i interface{}) error {
 			return nil
 		}
 	}
-	return setBadger(bdb.db, bdb.version.Version(), bdb.subs, "", id, i)
+	//return setBadger(bdb.db, bdb.version.Version(), bdb.subs, "", id, i)
+	return setBadger(bdb.db, bdb.version.Version(), "", id, i)
 }
 
 func (bdb *BadgerDB) SetValue(id string, content []byte) error {
@@ -306,7 +308,8 @@ func (bdb *BadgerDB) SetValue(id string, content []byte) error {
 			return nil
 		}
 	}
-	return setValueBadger(bdb.db, bdb.version.Version(), bdb.subs, "", id, content)
+	//return setValueBadger(bdb.db, bdb.version.Version(), bdb.subs, "", id, content)
+	return setValueBadger(bdb.db, bdb.version.Version(), "", id, content)
 }
 
 func (bdb *BadgerDB) Close() error {
@@ -319,11 +322,13 @@ func (bdb *BadgerDB) Close() error {
 	if bdb.cancel != nil {
 		bdb.cancel()
 	}
-	if bdb.subs != nil {
+	/*if bdb.subs != nil {
 		if err := bdb.subs.Stop(); err != nil {
 			return err
 		}
 	}
+
+	*/
 	return bdb.db.Close()
 }
 
@@ -333,7 +338,8 @@ func (bdb *BadgerDB) Delete(id string) error {
 			return nil
 		}
 	}
-	return deleteBadger(bdb.db, bdb.version.Version(), bdb.subs, "", id)
+	//return deleteBadger(bdb.db, bdb.version.Version(), bdb.subs, "", id)
+	return deleteBadger(bdb.db, bdb.version.Version(), "", id)
 }
 
 func (bdb *BadgerDB) DropNode(id string) error {
@@ -348,11 +354,12 @@ func (bdb *BadgerDB) DropNode(id string) error {
 	if err := bdb.db.DropPrefix([]byte(NodeSeparator + id + NodeSeparator)); err != nil {
 		return err
 	}
-	if bdb.subs != nil {
+	/*if bdb.subs != nil {
 		if err := bdb.subs.DropPrefix(id); err != nil {
 			return err
 		}
-	}
+	}*/
+
 	return nil
 }
 
@@ -440,7 +447,7 @@ func (ndb *BadgerNode) Delete(id string) error {
 		}
 	}
 	//return deleteBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id)
-	return deleteBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id)
+	return deleteBadger(ndb.db, ndb.version.Version(), ndb.prefix, id)
 }
 
 func (ndb *BadgerNode) DropNode(id string) error {
@@ -468,7 +475,7 @@ func (ndb *BadgerNode) Set(id string, i interface{}) error {
 		}
 	}
 	//return setBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, i)
-	return setBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id, i)
+	return setBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
 }
 
 func (ndb *BadgerNode) SetValue(id string, content []byte) error {
@@ -478,7 +485,7 @@ func (ndb *BadgerNode) SetValue(id string, content []byte) error {
 		}
 	}
 	//return setValueBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, content)
-	return setValueBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id, content)
+	return setValueBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, content)
 }
 
 func (ndb *BadgerNode) Get(id string, i interface{}) error {
@@ -492,7 +499,7 @@ func (ndb *BadgerNode) GetAndDelete(id string, i interface{}) error {
 		}
 	}
 	//return getAndDeleteBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, i)
-	return getAndDeleteBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id, i)
+	return getAndDeleteBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
 }
 
 func (ndb *BadgerNode) GetValue(id string) ([]byte, error) {
@@ -530,7 +537,8 @@ func (db *BadgerDB) Merge(id string, f MergeFunc) error {
 			return nil
 		}
 	}
-	return mergeBadger(db.db, db.version.Version(), "", id, f, db.subs)
+	//return mergeBadger(db.db, db.version.Version(), "", id, f, db.subs)
+	return mergeBadger(db.db, db.version.Version(), "", id, f)
 }
 
 func (db *BadgerNode) Merge(id string, f MergeFunc) error {
@@ -540,7 +548,8 @@ func (db *BadgerNode) Merge(id string, f MergeFunc) error {
 		}
 	}
 	//return mergeBadger(db.db, db.version.Version(), db.prefix, id, f, db.subs)
-	return mergeBadger(db.db, db.version.Version(), db.prefix, id, f, nil)
+	//return mergeBadger(db.db, db.version.Version(), db.prefix, id, f, nil)
+	return mergeBadger(db.db, db.version.Version(), db.prefix, id, f)
 }
 
 func (bdb *BadgerDB) Length() int {
@@ -608,11 +617,13 @@ func (dbd *BadgerNode) Pages(count int) int {
 
 func (dbd *BadgerNode) NewExpiryNode(id string, dur time.Duration, dbv *DatabaseVersioner) (Database, error) {
 	//return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly, dbd.subs)
-	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly, nil)
+	//return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly, nil)
+	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly)
 }
 
 func (dbd *BadgerDB) NewExpiryNode(id string, dur time.Duration, dbv *DatabaseVersioner) (Database, error) {
-	return newExpiryNode(dbd.db, "", id, dur, dbv, dbd.readonly, dbd.subs)
+	//return newExpiryNode(dbd.db, "", id, dur, dbv, dbd.readonly, dbd.subs)
+	return newExpiryNode(dbd.db, "", id, dur, dbv, dbd.readonly)
 }
 
 func (dbd *BadgerDB) Clear() error {

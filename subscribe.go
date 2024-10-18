@@ -1,11 +1,14 @@
 package database
 
+/*
 import (
 	"bytes"
 	"encoding/gob"
 	"errors"
 	"sync"
 )
+
+
 
 // Queue receiver is responsible for closing the channel
 func (db *BadgerDB) Queue() (chan DatabaseSubscribeItem, error) {
@@ -163,7 +166,7 @@ func (db *BadgerNode) Subscribe(c chan DatabaseSubscribeItem) error {
 	/*if db.subs == nil {
 		return errors.New("Subscriptions not built")
 	}
-	return db.subs.Subscribe(c)*/
+	return db.subs.Subscribe(c)*/ /*
 	return nil
 }
 
@@ -171,7 +174,7 @@ func (db *BadgerNode) UnSubscribe(c chan DatabaseSubscribeItem) error {
 	/*if db.subs == nil {
 		return errors.New("Subscriptions not built")
 	}
-	return db.subs.UnSubscribe(c)*/
+	return db.subs.UnSubscribe(c)*/ /*
 	return nil
 }
 
@@ -179,7 +182,7 @@ func (db *BadgerExpiry) Subscribe(c chan DatabaseSubscribeItem) error {
 	/*if db.subs == nil {
 		return errors.New("Subscriptions not built")
 	}
-	return db.subs.Subscribe(c)*/
+	return db.subs.Subscribe(c)*/ /*
 	return nil
 }
 
@@ -187,7 +190,7 @@ func (db *BadgerExpiry) UnSubscribe(c chan DatabaseSubscribeItem) error {
 	/*if db.subs == nil {
 		return errors.New("Subscriptions not built")
 	}
-	return db.subs.UnSubscribe(c)*/
+	return db.subs.UnSubscribe(c)*/ /*
 	return nil
 }
 
@@ -250,3 +253,4 @@ func (dbs *dbSubscribe) DropPrefix(prefix string) error {
 	dbs.queue <- del
 	return nil
 }
+*/

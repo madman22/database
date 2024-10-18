@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v3"
+	//badger "github.com/dgraph-io/badger/v3"
+	badger "github.com/dgraph-io/badger/v4"
 	"github.com/tevino/abool"
 )
 
@@ -22,7 +23,8 @@ type BadgerExpiry struct {
 	//subs     *dbSubscribe
 }
 
-func newExpiryNode(db *badger.DB, prefix, id string, dur time.Duration, dbv *DatabaseVersioner, readonly *abool.AtomicBool, subs *dbSubscribe) (Database, error) {
+// func newExpiryNode(db *badger.DB, prefix, id string, dur time.Duration, dbv *DatabaseVersioner, readonly *abool.AtomicBool, subs *dbSubscribe) (Database, error) {
+func newExpiryNode(db *badger.DB, prefix, id string, dur time.Duration, dbv *DatabaseVersioner, readonly *abool.AtomicBool) (Database, error) {
 	if db == nil {
 		return nil, ErrorDatabaseNil
 	}
@@ -95,7 +97,8 @@ func (ndb *BadgerExpiry) Delete(id string) error {
 			return nil
 		}
 	}
-	return deleteBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id)
+	//return deleteBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id)
+	return deleteBadger(ndb.db, ndb.version.Version(), ndb.prefix, id)
 }
 
 func (ndb *BadgerExpiry) DropNode(id string) error {
@@ -188,7 +191,8 @@ func (ndb *BadgerExpiry) GetAndDelete(id string, i interface{}) error {
 		}
 	}
 	//return getAndDeleteBadger(ndb.db, ndb.version.Version(), ndb.subs, ndb.prefix, id, i)
-	return getAndDeleteBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id, i)
+	//return getAndDeleteBadger(ndb.db, ndb.version.Version(), nil, ndb.prefix, id, i)
+	return getAndDeleteBadger(ndb.db, ndb.version.Version(), ndb.prefix, id, i)
 }
 
 func (ndb *BadgerExpiry) GetValue(id string) ([]byte, error) {
@@ -227,7 +231,8 @@ func (db *BadgerExpiry) Merge(id string, f MergeFunc) error {
 		}
 	}
 	//return mergeBadger(db.db, db.version.Version(), db.prefix, id, f, db.subs)
-	return mergeBadger(db.db, db.version.Version(), db.prefix, id, f, nil)
+	//return mergeBadger(db.db, db.version.Version(), db.prefix, id, f, nil)
+	return mergeBadger(db.db, db.version.Version(), db.prefix, id, f)
 }
 
 func (ndb *BadgerExpiry) Length() int {
@@ -256,7 +261,8 @@ func (dbd *BadgerExpiry) Pages(count int) int {
 
 func (dbd *BadgerExpiry) NewExpiryNode(id string, dur time.Duration, dbv *DatabaseVersioner) (Database, error) {
 	//return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly, dbd.subs)
-	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly, nil)
+	//return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly, nil)
+	return newExpiryNode(dbd.db, dbd.prefix, id, dur, dbv, dbd.readonly)
 }
 
 func (db *BadgerExpiry) GetIDs() ([]string, error) {

@@ -11,7 +11,8 @@ import (
 
 	//"time"
 
-	badger "github.com/dgraph-io/badger/v3"
+	//badger "github.com/dgraph-io/badger/v3"
+	badger "github.com/dgraph-io/badger/v4"
 	"github.com/spf13/afero"
 )
 
@@ -210,7 +211,8 @@ func getBadger(db *badger.DB, dbv Version, prefix, oid string, i interface{}) er
 	return nil
 }
 
-func getAndDeleteBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string, i interface{}) error {
+func getAndDeleteBadger(db *badger.DB, dbv Version, prefix, id string, i interface{}) error {
+	//func getAndDeleteBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string, i interface{}) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
@@ -247,12 +249,14 @@ func getAndDeleteBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, i
 	}); err != nil {
 		return err
 	}
-	if subs == nil {
+	/*if subs == nil {
 		return nil
 	}
 	if err := subs.Delete(id, prefix); err != nil {
 		return err
 	}
+
+	*/
 	return nil
 }
 
@@ -290,7 +294,8 @@ func getValueBadger(db *badger.DB, dbv Version, prefix, id string) ([]byte, erro
 	return content, nil
 }
 
-func setBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string, i interface{}) error {
+func setBadger(db *badger.DB, dbv Version, prefix, id string, i interface{}) error {
+	//func setBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string, i interface{}) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
@@ -315,15 +320,18 @@ func setBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string,
 		ent := badger.NewEntry([]byte(prefix+id), enc.Data())
 		return txn.SetEntry(ent)
 	}
-	if subs != nil {
+	/*if subs != nil {
 		if err := subs.Send(id, prefix, enc.Data()); err != nil {
 			return err
 		}
 	}
+
+	*/
 	return db.Update(f)
 }
 
-func setValueBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string, content []byte) error {
+func setValueBadger(db *badger.DB, dbv Version, prefix, id string, content []byte) error {
+	//func setValueBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string, content []byte) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
@@ -340,16 +348,19 @@ func setValueBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id st
 	if err != nil {
 		return err
 	}
-	if subs == nil {
+	/*if subs == nil {
 		return nil
 	}
 	if err := subs.Send(id, prefix, content); err != nil {
 		return err
 	}
+
+	*/
 	return nil
 }
 
-func deleteBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string) error {
+func deleteBadger(db *badger.DB, dbv Version, prefix, id string) error {
+	//func deleteBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id string) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
@@ -362,12 +373,14 @@ func deleteBadger(db *badger.DB, dbv Version, subs *dbSubscribe, prefix, id stri
 	if err := db.Update(f); err != nil {
 		return err
 	}
-	if subs == nil {
+	/*if subs == nil {
 		return nil
 	}
 	if err := subs.Delete(id, prefix); err != nil {
 		return err
 	}
+
+	*/
 	return nil
 }
 
@@ -542,7 +555,8 @@ func getAllIDsBadgerV2(db *badger.DB, prefix string) ([]string, error) {
 	return idList, nil
 }
 
-func mergeBadger(db *badger.DB, dbv Version, prefix, id string, f MergeFunc, subs *dbSubscribe) error {
+func mergeBadger(db *badger.DB, dbv Version, prefix, id string, f MergeFunc) error {
+	//func mergeBadger(db *badger.DB, dbv Version, prefix, id string, f MergeFunc, subs *dbSubscribe) error {
 	if db == nil {
 		return ErrorDatabaseNil
 	}
@@ -584,11 +598,13 @@ func mergeBadger(db *badger.DB, dbv Version, prefix, id string, f MergeFunc, sub
 	if err := txn.Commit(); err != nil {
 		return err
 	}
-	if subs != nil {
+	/*if subs != nil {
 		if err := subs.Send(id, prefix, newdata); err != nil {
 			return err
 		}
 	}
+
+	*/
 	return nil
 }
 
