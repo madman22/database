@@ -33,6 +33,7 @@ type BackupInfo struct {
 	//Nodes        []string
 	FilenameToId map[string]string
 	Version      Version
+	IdToEncoder  map[string]byte
 }
 
 /*type backupNodeInfo struct {
@@ -109,10 +110,12 @@ func backupDBPrefixes(prefixes []string, db *BadgerDB, w *zip.Writer) error {
 	var bi BackupInfo
 	bi.Version = db.Version()
 	bi.FilenameToId = make(map[string]string)
+	bi.IdToEncoder = make(map[string]byte)
 
 	for it.Rewind(); it.Valid(); it.Next() {
 		item := it.Item()
 		key := string(item.Key())
+		enc := item.UserMeta()
 
 		if len(prefixes) > 0 {
 			good := false
@@ -133,6 +136,7 @@ func backupDBPrefixes(prefixes []string, db *BadgerDB, w *zip.Writer) error {
 			errs = append(errs, err)
 			continue
 		}
+		bi.IdToEncoder[key] = enc
 		if err := item.Value(func(val []byte) error {
 			b := make([]byte, len(val))
 			copy(b, val)
@@ -174,10 +178,15 @@ func backupDB(db *BadgerDB, w *zip.Writer) error {
 	var bi BackupInfo
 	bi.Version = db.Version()
 	bi.FilenameToId = make(map[string]string)
+	bi.IdToEncoder = make(map[string]byte)
 
 	for it.Rewind(); it.Valid(); it.Next() {
 		item := it.Item()
 		key := string(item.Key())
+		enc := item.UserMeta()
+		if enc != 2 {
+			enc = 0
+		}
 		filename := uuid.NewV4().String()
 		f, err := w.Create(filename)
 		if err != nil {
@@ -193,6 +202,7 @@ func backupDB(db *BadgerDB, w *zip.Writer) error {
 			errs = append(errs, errors.New("key:"+key+" "+err.Error()))
 		}
 		bi.FilenameToId[filename] = key
+		bi.IdToEncoder[key] = enc
 		w.Flush()
 	}
 
@@ -283,11 +293,21 @@ func restoreDBPrefixes(prefixes []string, db *BadgerDB, r *zip.Reader) error {
 			errs = append(errs, errors.New(err.Error()+":"+f.Name))
 			continue
 		}
-		if err := txn.Set([]byte(id), data.Bytes()); err != nil {
-			if err == badger.ErrTxnTooBig {
+
+		var enc byte
+		if e, ok := bi.IdToEncoder[id]; ok {
+			enc = e
+		} else {
+			enc = 0
+		}
+
+		entry := badger.NewEntry([]byte(id), data.Bytes()).WithMeta(enc)
+
+		if err := txn.SetEntry(entry); err != nil {
+			if errors.Is(err, badger.ErrTxnTooBig) {
 				txn.Commit()
 				txn = db.db.NewTransaction(true)
-				if err := txn.Set([]byte(id), data.Bytes()); err != nil {
+				if err := txn.SetEntry(entry); err != nil {
 					errs = append(errs, errors.New(err.Error()+":"+f.Name))
 					continue
 				}
@@ -296,6 +316,21 @@ func restoreDBPrefixes(prefixes []string, db *BadgerDB, r *zip.Reader) error {
 				continue
 			}
 		}
+
+		/*if err := txn.Set([]byte(id), data.Bytes()); err != nil {
+			if err == badger.ErrTxnTooBig {
+				txn.Commit()
+				txn = db.db.NewTransaction(true)
+				if err := txn.SetEntry(entry); err != nil {
+					errs = append(errs, errors.New(err.Error()+":"+f.Name))
+					continue
+				}
+
+			} else {
+				errs = append(errs, errors.New(err.Error()+":"+f.Name))
+				continue
+			}
+		}*/
 	}
 	txn.Commit()
 	if len(errs) > 0 {
@@ -372,7 +407,31 @@ func restoreDB(db *BadgerDB, r *zip.Reader) error {
 			errs = append(errs, errors.New(err.Error()+":"+f.Name))
 			continue
 		}
-		if err := txn.Set([]byte(id), data.Bytes()); err != nil {
+
+		var enc byte
+		if e, ok := bi.IdToEncoder[id]; ok {
+			enc = e
+		} else {
+			enc = 0
+		}
+
+		entry := badger.NewEntry([]byte(id), data.Bytes()).WithMeta(enc)
+
+		if err := txn.SetEntry(entry); err != nil {
+			if errors.Is(err, badger.ErrTxnTooBig) {
+				txn.Commit()
+				txn = db.db.NewTransaction(true)
+				if err := txn.SetEntry(entry); err != nil {
+					errs = append(errs, errors.New(err.Error()+":"+f.Name))
+					continue
+				}
+			} else {
+				errs = append(errs, errors.New(err.Error()+":"+f.Name))
+				continue
+			}
+		}
+
+		/*if err := txn.Set([]byte(id), data.Bytes()); err != nil {
 			if err == badger.ErrTxnTooBig {
 				txn.Commit()
 				txn = db.db.NewTransaction(true)
@@ -384,7 +443,7 @@ func restoreDB(db *BadgerDB, r *zip.Reader) error {
 				errs = append(errs, errors.New(err.Error()+":"+f.Name))
 				continue
 			}
-		}
+		}*/
 	}
 	txn.Commit()
 	if len(errs) > 0 {
@@ -418,6 +477,7 @@ func backupNodePrefixes(prefixes []string, db *BadgerNode, w *zip.Writer) error 
 	var bi BackupInfo
 	bi.Version = db.Version()
 	bi.FilenameToId = make(map[string]string)
+	bi.IdToEncoder = make(map[string]byte)
 
 	for it.Rewind(); it.Valid(); it.Next() {
 		item := it.Item()
@@ -448,7 +508,11 @@ func backupNodePrefixes(prefixes []string, db *BadgerNode, w *zip.Writer) error 
 		}); err != nil {
 			errs = append(errs, errors.New("key:"+key+" "+err.Error()))
 		}
+
+		enc := item.UserMeta()
+
 		bi.FilenameToId[filename] = key
+		bi.IdToEncoder[key] = enc
 	}
 	if f, err := w.Create("backupInfo"); err != nil {
 		return err
@@ -479,6 +543,7 @@ func backupNode(db *BadgerNode, w *zip.Writer) error {
 	var bi BackupInfo
 	bi.Version = db.Version()
 	bi.FilenameToId = make(map[string]string)
+	bi.IdToEncoder = make(map[string]byte)
 
 	for it.Rewind(); it.Valid(); it.Next() {
 		item := it.Item()
@@ -497,7 +562,10 @@ func backupNode(db *BadgerNode, w *zip.Writer) error {
 		}); err != nil {
 			errs = append(errs, errors.New("key:"+key+" "+err.Error()))
 		}
+
+		enc := item.UserMeta()
 		bi.FilenameToId[filename] = key
+		bi.IdToEncoder[key] = enc
 	}
 	if f, err := w.Create("backupInfo"); err != nil {
 		return err
@@ -571,7 +639,31 @@ func restoreNodePrefixes(prefixes []string, db *BadgerNode, r *zip.Reader) error
 			errs = append(errs, errors.New(err.Error()+":"+f.Name))
 			continue
 		}
-		if err := txn.Set([]byte(id), data.Bytes()); err != nil {
+
+		var enc byte
+		if e, ok := bi.IdToEncoder[id]; ok {
+			enc = e
+		} else {
+			enc = 0
+		}
+
+		entry := badger.NewEntry([]byte(id), data.Bytes()).WithMeta(enc)
+
+		if err := txn.SetEntry(entry); err != nil {
+			if errors.Is(err, badger.ErrTxnTooBig) {
+				txn.Commit()
+				txn = db.db.NewTransaction(true)
+				if err := txn.SetEntry(entry); err != nil {
+					errs = append(errs, errors.New(err.Error()+":"+f.Name))
+					continue
+				}
+			} else {
+				errs = append(errs, errors.New(err.Error()+":"+f.Name))
+				continue
+			}
+		}
+
+		/*if err := txn.Set([]byte(id), data.Bytes()); err != nil {
 			if err == badger.ErrTxnTooBig {
 				txn.Commit()
 				txn = db.db.NewTransaction(true)
@@ -583,7 +675,7 @@ func restoreNodePrefixes(prefixes []string, db *BadgerNode, r *zip.Reader) error
 				errs = append(errs, errors.New(err.Error()+":"+f.Name))
 				continue
 			}
-		}
+		}*/
 	}
 	txn.Commit()
 	if len(errs) > 0 {
@@ -648,7 +740,30 @@ func restoreNode(db *BadgerNode, r *zip.Reader) error {
 			errs = append(errs, errors.New(err.Error()+":"+f.Name))
 			continue
 		}
-		if err := txn.Set([]byte(id), data.Bytes()); err != nil {
+
+		var enc byte
+		if e, ok := bi.IdToEncoder[id]; ok {
+			enc = e
+		} else {
+			enc = 0
+		}
+
+		entry := badger.NewEntry([]byte(id), data.Bytes()).WithMeta(enc)
+		if err := txn.SetEntry(entry); err != nil {
+			if errors.Is(err, badger.ErrTxnTooBig) {
+				txn.Commit()
+				txn = db.db.NewTransaction(true)
+				if err := txn.SetEntry(entry); err != nil {
+					errs = append(errs, errors.New(err.Error()+":"+f.Name))
+					continue
+				}
+			} else {
+				errs = append(errs, errors.New(err.Error()+":"+f.Name))
+				continue
+			}
+		}
+
+		/*if err := txn.Set([]byte(id), data.Bytes()); err != nil {
 			if err == badger.ErrTxnTooBig {
 				txn.Commit()
 				txn = db.db.NewTransaction(true)
@@ -660,7 +775,7 @@ func restoreNode(db *BadgerNode, r *zip.Reader) error {
 				errs = append(errs, errors.New(err.Error()+":"+f.Name))
 				continue
 			}
-		}
+		}*/
 	}
 	txn.Commit()
 	if len(errs) > 0 {

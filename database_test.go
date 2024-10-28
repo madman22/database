@@ -204,6 +204,7 @@ type Device struct {
 	Description string
 	Username    string
 	Password    string
+	LastSeen    time.Time
 }
 
 func TestDatabaseDeep(t *testing.T) {
@@ -225,6 +226,8 @@ func TestDatabaseDeep(t *testing.T) {
 	var dev Device
 	dev.ID = uuid.NewV4().String()
 	dev.IP = net.ParseIP("192.168.88.1")
+	ls := time.Now()
+	dev.LastSeen = ls
 	mac, err := net.ParseMAC("64:d1:54:b5:11:91")
 	if err != nil {
 		t.Error(err.Error())
@@ -370,7 +373,7 @@ func TestDatabaseDeep(t *testing.T) {
 		//if err := db.Get(dev.ID, &nd); err != nil {
 		t.Error(err.Error())
 	} else {
-		t.Log("Got Device!", dev.ID, dev.IP.String(), dev.Description, dev.Macs)
+		t.Log("Got Device!", nd.ID, nd.IP.String(), nd.Description, nd.Macs, nd.LastSeen.Format(time.RFC3339))
 	}
 	t.Log("Database Version", db.Version().String())
 }

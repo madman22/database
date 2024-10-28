@@ -21,15 +21,17 @@ type Version int
 const (
 	Version1 Version = iota
 	Version2
-	//Version3
+	Version3
 )
 
 const LatestVersion = Version2
 
+//const LatestVersion = Version3
+
 func (v Version) String() string {
 	switch v {
-	//case Version3:
-	//return "v3"
+	case Version3:
+		return "v3"
 	case Version2:
 		return "v2"
 	default:
@@ -46,8 +48,8 @@ func (dbv *DatabaseVersioner) Version() Version {
 	dbv.mux.RLock()
 	defer dbv.mux.RUnlock()
 	switch dbv.ver {
-	//case Version3:
-	//return Version3
+	case Version3:
+		return Version3
 	case Version2:
 		return Version2
 	default:
@@ -139,6 +141,33 @@ func Upgrade(dbi Database, target Version) error {
 	return nil
 }
 
+/*func getEncoder(db *badger.DB) int {
+	if db == nil {
+		return 0
+	}
+	var enc int
+	f := func(val []byte) error {
+		dcr := gob.NewDecoder(bytes.NewReader(val))
+		if err := dcr.Decode(&enc); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(EncoderID))
+		if err != nil {
+			return err
+		}
+		if err := item.Value(f); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return 0
+	}
+	return enc
+}*/
+
 func getVersion(db *badger.DB) Version {
 	if db == nil {
 		return Version2
@@ -196,14 +225,23 @@ func getBadger(db *badger.DB, dbv Version, prefix, oid string, i interface{}) er
 		id = oid
 	}
 	f := buildGetBadger(i)
+	f2 := buildGetBadgerV3(i)
 	if err := db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(prefix + id))
 		if err != nil {
 			return err
 		}
-		if err := item.Value(f); err != nil {
-			return err
+		decb := item.UserMeta()
+		if decb == 2 {
+			if err := item.Value(f2); err != nil {
+				return err
+			}
+		} else {
+			if err := item.Value(f); err != nil {
+				return err
+			}
 		}
+
 		return nil
 	}); err != nil {
 		return errors.New(err.Error() + " " + oid)
@@ -234,13 +272,21 @@ func getAndDeleteBadger(db *badger.DB, dbv Version, prefix, id string, i interfa
 		return nil
 	}*/
 	f := buildGetBadger(i)
+	f2 := buildGetBadgerV3(i)
 	if err := db.Update(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(prefix + id))
 		if err != nil {
 			return err
 		}
-		if err := item.Value(f); err != nil {
-			return err
+		decb := item.UserMeta()
+		if decb == 2 {
+			if err := item.Value(f2); err != nil {
+				return err
+			}
+		} else {
+			if err := item.Value(f); err != nil {
+				return err
+			}
 		}
 		if err := txn.Delete([]byte(prefix + id)); err != nil {
 			return err
@@ -310,15 +356,27 @@ func setBadger(db *badger.DB, dbv Version, prefix, id string, i interface{}) err
 	if dbv >= Version2 {
 		id = EntityPrefix + id
 	}
+	var enc Encoder
+	if dbv >= Version3 {
+		enc = newCborEncoder()
+	} else {
+		enc = newGobEncoder()
+	}
 	//buf := &bytes.Buffer{}
 	//enc := gob.NewEncoder(buf)
-	enc := newGobEncoder()
+
 	if err := enc.Encode(i); err != nil {
 		return err
 	}
 	f := func(txn *badger.Txn) error {
-		ent := badger.NewEntry([]byte(prefix+id), enc.Data())
-		return txn.SetEntry(ent)
+		if dbv >= Version3 {
+			ent := badger.NewEntry([]byte(prefix+id), enc.Data()).WithMeta(byte(2))
+			return txn.SetEntry(ent)
+		} else {
+			ent := badger.NewEntry([]byte(prefix+id), enc.Data())
+			return txn.SetEntry(ent)
+		}
+
 	}
 	/*if subs != nil {
 		if err := subs.Send(id, prefix, enc.Data()); err != nil {
@@ -497,10 +555,16 @@ func getAllBadgerV2(db *badger.DB, prefix string) (List, error) {
 		} else {
 			key = strings.TrimPrefix(string(item.Key()), EntityPrefix)
 		}
+		enc := item.UserMeta()
+
 		if err := item.Value(func(val []byte) error {
 			b := make([]byte, len(val))
 			copy(b, val)
-			return list.Add(key, b)
+			if enc == 2 {
+				return list.AddV3(key, b)
+			} else {
+				return list.Add(key, b)
+			}
 		}); err != nil {
 			errs = append(errs, errors.New("key:"+key+" "+err.Error()))
 		}
@@ -724,10 +788,17 @@ func rangeBadger(db *badger.DB, dbv Version, prefix string, page, count int) (Li
 		}
 		visited++
 		if currentPage == page {
+
+			enc := item.UserMeta()
+
 			if err := item.Value(func(val []byte) error {
 				b := make([]byte, len(val))
 				copy(b, val)
-				return list.Add(key, b)
+				if enc == 2 {
+					return list.AddV3(key, b)
+				} else {
+					return list.Add(key, b)
+				}
 			}); err != nil {
 				errs = append(errs, key+" "+err.Error())
 			}

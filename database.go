@@ -23,6 +23,8 @@ const SettingsPrefix = `$$`
 const VersionID = SettingsPrefix + "Version"
 const TimeoutID = SettingsPrefix + "Timeout"
 
+//const EncoderID = SettingsPrefix + "Encoder"
+
 var ErrorDatabaseNil = errors.New("Database Nil!")
 var ErrorNotImplemented = errors.New("Not Implemented!")
 var ErrorNotClosable = errors.New("Node not closable")
@@ -105,6 +107,14 @@ func (l List) Add(key string, content []byte) error {
 		return ErrorKeysNil
 	}
 	l[key] = newGobDecoder(content)
+	return nil
+}
+
+func (l List) AddV3(key string, content []byte) error {
+	if len(key) < 1 {
+		return ErrorKeysNil
+	}
+	l[key] = newCborDecoder(content)
 	return nil
 }
 

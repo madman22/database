@@ -10,6 +10,8 @@ require (
 	github.com/twinj/uuid v1.0.0
 )
 
+require github.com/fxamacker/cbor v1.5.1
+
 require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
@@ -23,6 +25,7 @@ require (
 	github.com/klauspost/compress v1.15.1 // indirect
 	github.com/myesui/uuid v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
 	go.opencensus.io v0.23.0 // indirect
 	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
