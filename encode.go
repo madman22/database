@@ -27,6 +27,7 @@ type DBDecoder interface {
 type Decoder interface {
 	Data() []byte
 	Decode(interface{}) error
+	Len() uint64
 }
 
 type gobDecoder struct {
@@ -41,6 +42,10 @@ func newGobDecoder(data []byte) Decoder {
 	gd.dec = gob.NewDecoder(gd.data)
 	//gd.dec = NewGobDecoder(gd.data)
 	return &gd
+}
+
+func (gd *gobDecoder) Len() uint64 {
+	return uint64(gd.data.Len())
 }
 
 func (gd *gobDecoder) Data() []byte {

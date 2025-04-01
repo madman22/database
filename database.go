@@ -599,18 +599,84 @@ func (dbd *BadgerDB) Pages(count int) int {
 }
 
 func (dbd *BadgerDB) Size() uint64 {
-	_, uncompressedSize := dbd.db.Size()
-	return uint64(uncompressedSize)
+	var total uint64
+	/*items, err := dbd.GetAll()
+	if err != nil {
+		return 0
+	}
+	for _, item := range items {
+		total += item.Len()
+	}*/
+
+	fe := func(id string, dec Decoder) error {
+		total += dec.Len()
+		return nil
+	}
+	if err := dbd.ForEach(fe); err != nil {
+		return total
+	}
+
+	nodes, err := dbd.GetNodes()
+	if err != nil {
+		return total
+	}
+	for _, nodeName := range nodes {
+		node, err := dbd.NewNode(nodeName)
+		if err != nil {
+			continue
+		}
+		total += node.Size()
+	}
+	return total
 }
 
 func (dbd *BadgerNode) Size() uint64 {
-	_, uncompressedSize := dbd.db.Size()
-	return uint64(uncompressedSize)
+	var total uint64
+	fe := func(id string, dec Decoder) error {
+		total += dec.Len()
+		return nil
+	}
+	if err := dbd.ForEach(fe); err != nil {
+		return total
+	}
+	nodes, err := dbd.GetNodes()
+	if err != nil {
+		return total
+	}
+	for _, nodeName := range nodes {
+		node, err := dbd.NewNode(nodeName)
+		if err != nil {
+			continue
+		}
+		total += node.Size()
+	}
+	return total
+
+	/*_, uncompressedSize := dbd.db.Size()
+	return uint64(uncompressedSize)*/
 }
 
 func (dbd *BadgerExpiry) Size() uint64 {
-	_, uncompressedSize := dbd.db.Size()
-	return uint64(uncompressedSize)
+	var total uint64
+	fe := func(id string, dec Decoder) error {
+		total += dec.Len()
+		return nil
+	}
+	if err := dbd.ForEach(fe); err != nil {
+		return total
+	}
+	nodes, err := dbd.GetNodes()
+	if err != nil {
+		return total
+	}
+	for _, nodeName := range nodes {
+		node, err := dbd.NewNode(nodeName)
+		if err != nil {
+			continue
+		}
+		total += node.Size()
+	}
+	return total
 }
 
 func (dbd *BadgerNode) Pages(count int) int {

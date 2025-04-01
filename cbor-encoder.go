@@ -47,3 +47,7 @@ func (cd *cborDecoder) Decode(i interface{}) error {
 func (cd *cborDecoder) Data() []byte {
 	return cd.data.Bytes()
 }
+
+func (cd *cborDecoder) Len() uint64 {
+	return uint64(cd.data.Len())
+}
