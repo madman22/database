@@ -2,6 +2,7 @@ package database
 
 import (
 	"archive/zip"
+	"iter"
 	"time"
 )
 
@@ -139,4 +140,12 @@ func (ds *DatabaseS3) NewExpiryNode(name string, dur time.Duration, ver *Databas
 
 func (ds *DatabaseS3) Version() Version {
 	return Version1
+}
+
+func (ds *DatabaseS3) ReadAll() iter.Seq2[string, Decoder] {
+	return nil
+}
+
+func (ds *DatabaseS3) ModifyAll() iter.Seq2[string, ModifyAll] {
+	return nil
 }

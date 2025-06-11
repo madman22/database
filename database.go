@@ -3,6 +3,8 @@ package database
 import (
 	//"bytes"
 	"context"
+	"iter"
+
 	//"encoding/gob"
 	"errors"
 	"strings"
@@ -66,6 +68,7 @@ type DatabaseReader interface {
 	Prefix() string
 	ForEach(ForEachFunc) error
 	Exists(string) bool
+	ReadAll() iter.Seq2[string, Decoder]
 }
 
 type ForEachFunc func(string, Decoder) error
@@ -77,6 +80,7 @@ type DatabaseWriter interface {
 	Clear() error
 	GetAndDelete(string, interface{}) error
 	Merge(string, MergeFunc) error
+	ModifyAll() iter.Seq2[string, ModifyAll]
 }
 
 type MergeFunc func([]byte) ([]byte, error)
