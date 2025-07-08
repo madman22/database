@@ -17,7 +17,12 @@ func TestGenericNode_GetAndDelete(t *testing.T) {
 	}
 	defer db.Close()
 
-	gn, err := NewGenericNode[TestStruct](db)
+	node, err := db.NewNode("Test")
+	if err != nil {
+		t.Fatalf("Failed to create node: %v", err)
+	}
+
+	gn, err := NewGenericNode[TestStruct](node)
 	if err != nil {
 		t.Fatalf("Failed to create GenericNode: %v", err)
 	}
