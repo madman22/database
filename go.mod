@@ -1,6 +1,6 @@
 module github.com/madman22/database
 
-go 1.19
+go 1.24.5
 
 require (
 	github.com/dgraph-io/badger/v4 v4.7.0
