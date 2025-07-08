@@ -91,6 +91,18 @@ func (gn *GenericNode[T]) Set(id string, item T) error {
 	return gn.db.Set(id, item)
 }
 
+func (gn *GenericNode[T]) GetAndDelete(id string, item *T) error {
+	if gn.db.readonly != nil {
+		if gn.db.readonly.IsSet() {
+			if err := gn.Get(id, item); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+	return getAndDeleteBadger(gn.db.db, gn.db.version.Version(), gn.db.prefix, id, item)
+}
+
 func (gn *GenericNode[T]) ReadAll() iter.Seq2[string, T] {
 	return func(yield func(string, T) bool) {
 		txn := gn.db.db.NewTransaction(false)
