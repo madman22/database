@@ -3,6 +3,7 @@ package database
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"github.com/dgraph-io/badger/v4"
 	"iter"
 	"strings"
@@ -71,7 +72,19 @@ func NewGenericNode[T any](db Database) (*GenericNode[T], error) {
 
 	bdb, ok := db.(*BadgerNode)
 	if !ok {
-		return nil, ErrorInvalidVersion
+		dbb, ok := db.(*BadgerDB)
+		if !ok {
+			return nil, ErrorInvalidVersion
+		}
+		t := fmt.Sprintf("%T", new(T))
+		node, err := dbb.NewNode(t)
+		if err != nil {
+			return nil, err
+		}
+		bdb, ok = node.(*BadgerNode)
+		if !ok {
+			return nil, ErrorInvalidVersion
+		}
 	}
 
 	gn := &GenericNode[T]{bdb}
@@ -82,6 +95,14 @@ func (gn *GenericNode[T]) Get(id string) (T, error) {
 	var item T
 
 	if err := gn.db.Get(id, &item); err != nil {
+		return item, err
+	}
+	return item, nil
+}
+
+func (gn *GenericNode[T]) GetAndDelete(id string) (T, error) {
+	var item T
+	if err := gn.db.GetAndDelete(id, &item); err != nil {
 		return item, err
 	}
 	return item, nil
