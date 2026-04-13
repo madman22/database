@@ -149,3 +149,7 @@ func (ds *DatabaseS3) ReadAll() iter.Seq2[string, Decoder] {
 func (ds *DatabaseS3) ModifyAll() iter.Seq2[string, ModifyAll] {
 	return nil
 }
+
+func (ds *DatabaseS3) RangeRead(int, int) iter.Seq2[string, Decoder] {
+	return nil
+}

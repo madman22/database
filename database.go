@@ -69,6 +69,7 @@ type DatabaseReader interface {
 	ForEach(ForEachFunc) error
 	Exists(string) bool
 	ReadAll() iter.Seq2[string, Decoder]
+	RangeRead(int, int) iter.Seq2[string, Decoder]
 }
 
 type ForEachFunc func(string, Decoder) error

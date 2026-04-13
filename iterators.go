@@ -2,9 +2,10 @@ package database
 
 import (
 	"errors"
-	"github.com/dgraph-io/badger/v4"
 	"iter"
 	"strings"
+
+	"github.com/dgraph-io/badger/v4"
 )
 
 type ModifyAll struct {
@@ -248,4 +249,140 @@ func (db *BadgerDB) ModifyAll() iter.Seq2[string, ModifyAll] {
 		return modifyAllBadgerV1(db.db, "")
 	}
 	return modifyAllBadgerV2(db.db, "")
+}
+
+func (db *BadgerDB) RangeRead(page, count int) iter.Seq2[string, Decoder] {
+	if db.version.Version() < Version2 {
+		return rangeReadBadgerV1(db.db, page, count, "")
+	}
+	return rangeReadBadgerV2(db.db, page, count, "")
+}
+
+func (db *BadgerNode) RangeRead(page, count int) iter.Seq2[string, Decoder] {
+	if db.version.Version() < Version2 {
+		return rangeReadBadgerV1(db.db, page, count, db.prefix)
+	}
+	return rangeReadBadgerV2(db.db, page, count, db.prefix)
+}
+
+func (db *BadgerExpiry) RangeRead(page, count int) iter.Seq2[string, Decoder] {
+	if db.version.Version() < Version2 {
+		return rangeReadBadgerV1(db.db, page, count, db.prefix)
+	}
+	return rangeReadBadgerV2(db.db, page, count, db.prefix)
+}
+
+func rangeReadBadgerV1(db *badger.DB, page, count int, prefix string) iter.Seq2[string, Decoder] {
+	return func(yield func(string, Decoder) bool) {
+		if page < 1 {
+			page = 1
+		}
+		if count < 1 {
+			count = 1
+		}
+
+		txn := db.NewTransaction(false)
+		defer txn.Discard()
+		opts := badger.DefaultIteratorOptions
+		if len(prefix) > 0 {
+			opts.Prefix = []byte(prefix)
+			opts.PrefetchValues = true
+		} else {
+			opts.PrefetchValues = false
+		}
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		var visited int
+		var currentPage int = 1
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			var key string
+			var dec Decoder
+			if len(prefix) > 0 {
+				key = strings.TrimPrefix(string(item.Key()), prefix)
+			} else {
+				key = string(item.Key())
+			}
+			if strings.Contains(key, NodeSeparator) {
+				continue
+			}
+			visited++
+			if currentPage == page {
+				if err := item.Value(func(val []byte) error {
+					b := make([]byte, len(val))
+					copy(b, val)
+					dec = newGobDecoder(b)
+					return nil
+				}); err != nil {
+					continue
+				}
+				if !yield(key, dec) {
+					return
+				}
+			} else if currentPage > page {
+				break
+			}
+			if visited == count {
+				currentPage++
+				visited = 0
+			}
+		}
+	}
+}
+
+func rangeReadBadgerV2(db *badger.DB, page, count int, prefix string) iter.Seq2[string, Decoder] {
+	return func(yield func(string, Decoder) bool) {
+		if page < 1 {
+			page = 1
+		}
+		if count < 1 {
+			count = 1
+		}
+		txn := db.NewTransaction(false)
+		defer txn.Discard()
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = true
+		if len(prefix) > 0 {
+			opts.Prefix = []byte(prefix + EntityPrefix)
+		} else {
+			opts.Prefix = []byte(EntityPrefix)
+		}
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		var visited int
+		var currentPage int = 1
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			var key string
+			var dec Decoder
+			if len(prefix) > 0 {
+				key = strings.TrimPrefix(string(item.Key()), prefix+EntityPrefix)
+			} else {
+				key = strings.TrimPrefix(string(item.Key()), EntityPrefix)
+			}
+			visited++
+			if currentPage == page {
+				if err := item.Value(func(val []byte) error {
+					b := make([]byte, len(val))
+					copy(b, val)
+					dec = newGobDecoder(b)
+					return nil
+				}); err != nil {
+					continue
+				}
+				if !yield(key, dec) {
+					return
+				}
+			} else if currentPage > page {
+				break
+			}
+			if visited == count {
+				currentPage++
+				visited = 0
+			}
+
+		}
+	}
 }
